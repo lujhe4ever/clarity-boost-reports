@@ -9,11 +9,29 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as DashboardRouteImport } from './routes/dashboard'
+import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiSetupAdminRouteImport } from './routes/api/setup-admin'
 import { Route as ApiDeleteClientRouteImport } from './routes/api/delete-client'
 import { Route as ApiCreateClientRouteImport } from './routes/api/create-client'
 
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardRoute = DashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminRoute = AdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -37,12 +55,18 @@ const ApiCreateClientRoute = ApiCreateClientRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
+  '/dashboard': typeof DashboardRoute
+  '/login': typeof LoginRoute
   '/api/create-client': typeof ApiCreateClientRoute
   '/api/delete-client': typeof ApiDeleteClientRoute
   '/api/setup-admin': typeof ApiSetupAdminRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
+  '/dashboard': typeof DashboardRoute
+  '/login': typeof LoginRoute
   '/api/create-client': typeof ApiCreateClientRoute
   '/api/delete-client': typeof ApiDeleteClientRoute
   '/api/setup-admin': typeof ApiSetupAdminRoute
@@ -50,6 +74,9 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
+  '/dashboard': typeof DashboardRoute
+  '/login': typeof LoginRoute
   '/api/create-client': typeof ApiCreateClientRoute
   '/api/delete-client': typeof ApiDeleteClientRoute
   '/api/setup-admin': typeof ApiSetupAdminRoute
@@ -58,14 +85,27 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/admin'
+    | '/dashboard'
+    | '/login'
     | '/api/create-client'
     | '/api/delete-client'
     | '/api/setup-admin'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/create-client' | '/api/delete-client' | '/api/setup-admin'
+  to:
+    | '/'
+    | '/admin'
+    | '/dashboard'
+    | '/login'
+    | '/api/create-client'
+    | '/api/delete-client'
+    | '/api/setup-admin'
   id:
     | '__root__'
     | '/'
+    | '/admin'
+    | '/dashboard'
+    | '/login'
     | '/api/create-client'
     | '/api/delete-client'
     | '/api/setup-admin'
@@ -73,6 +113,9 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AdminRoute: typeof AdminRoute
+  DashboardRoute: typeof DashboardRoute
+  LoginRoute: typeof LoginRoute
   ApiCreateClientRoute: typeof ApiCreateClientRoute
   ApiDeleteClientRoute: typeof ApiDeleteClientRoute
   ApiSetupAdminRoute: typeof ApiSetupAdminRoute
@@ -80,6 +123,27 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard': {
+      id: '/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof DashboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin': {
+      id: '/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -113,6 +177,9 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AdminRoute: AdminRoute,
+  DashboardRoute: DashboardRoute,
+  LoginRoute: LoginRoute,
   ApiCreateClientRoute: ApiCreateClientRoute,
   ApiDeleteClientRoute: ApiDeleteClientRoute,
   ApiSetupAdminRoute: ApiSetupAdminRoute,
@@ -120,3 +187,12 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { createStart } from '@tanstack/react-start'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+  }
+}
