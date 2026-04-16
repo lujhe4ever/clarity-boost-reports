@@ -10,33 +10,72 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ApiSetupAdminRouteImport } from './routes/api/setup-admin'
+import { Route as ApiDeleteClientRouteImport } from './routes/api/delete-client'
+import { Route as ApiCreateClientRouteImport } from './routes/api/create-client'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiSetupAdminRoute = ApiSetupAdminRouteImport.update({
+  id: '/api/setup-admin',
+  path: '/api/setup-admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiDeleteClientRoute = ApiDeleteClientRouteImport.update({
+  id: '/api/delete-client',
+  path: '/api/delete-client',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiCreateClientRoute = ApiCreateClientRouteImport.update({
+  id: '/api/create-client',
+  path: '/api/create-client',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/api/create-client': typeof ApiCreateClientRoute
+  '/api/delete-client': typeof ApiDeleteClientRoute
+  '/api/setup-admin': typeof ApiSetupAdminRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/api/create-client': typeof ApiCreateClientRoute
+  '/api/delete-client': typeof ApiDeleteClientRoute
+  '/api/setup-admin': typeof ApiSetupAdminRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/api/create-client': typeof ApiCreateClientRoute
+  '/api/delete-client': typeof ApiDeleteClientRoute
+  '/api/setup-admin': typeof ApiSetupAdminRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/api/create-client'
+    | '/api/delete-client'
+    | '/api/setup-admin'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to: '/' | '/api/create-client' | '/api/delete-client' | '/api/setup-admin'
+  id:
+    | '__root__'
+    | '/'
+    | '/api/create-client'
+    | '/api/delete-client'
+    | '/api/setup-admin'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ApiCreateClientRoute: typeof ApiCreateClientRoute
+  ApiDeleteClientRoute: typeof ApiDeleteClientRoute
+  ApiSetupAdminRoute: typeof ApiSetupAdminRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +87,35 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/setup-admin': {
+      id: '/api/setup-admin'
+      path: '/api/setup-admin'
+      fullPath: '/api/setup-admin'
+      preLoaderRoute: typeof ApiSetupAdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/delete-client': {
+      id: '/api/delete-client'
+      path: '/api/delete-client'
+      fullPath: '/api/delete-client'
+      preLoaderRoute: typeof ApiDeleteClientRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/create-client': {
+      id: '/api/create-client'
+      path: '/api/create-client'
+      fullPath: '/api/create-client'
+      preLoaderRoute: typeof ApiCreateClientRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ApiCreateClientRoute: ApiCreateClientRoute,
+  ApiDeleteClientRoute: ApiDeleteClientRoute,
+  ApiSetupAdminRoute: ApiSetupAdminRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
