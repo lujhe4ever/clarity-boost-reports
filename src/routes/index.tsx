@@ -53,7 +53,7 @@ function LandingPage() {
             {
               icon: TrendingUp,
               title: "Métricas que importam",
-              desc: "Investimento, leads, ROI e CPL em destaque. Sem ruído.",
+              desc: "Investimento, leads, ROI e CPL em destaque.",
             },
             {
               icon: Shield,
