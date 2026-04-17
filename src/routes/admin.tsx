@@ -349,20 +349,24 @@ function ManageClientDialog({
       complete: async (results) => {
         try {
           const rows = results.data as any[];
+          const totalRows = rows.length;
           const records = rows
             .map((r) => ({
               client_id: client.id,
               date: r.data || r.date,
               platform: r.plataforma || r.platform || "Meta Ads",
               campaign_name: r.campanha || r.campaign_name || "Sem nome",
-              investment: parseFloat(String(r.investimento || r.investment || "0").replace(",", ".")) || 0,
-              leads: parseInt(String(r.leads || "0")) || 0,
-              revenue: parseFloat(String(r.faturamento || r.revenue || "0").replace(",", ".")) || 0,
+              investment: parseNumberBR(r.investimento ?? r.investment),
+              leads: Math.round(parseNumberBR(r.leads)),
+              revenue: parseNumberBR(r.faturamento ?? r.revenue),
             }))
             .filter((r) => r.date);
 
+          const ignored = totalRows - records.length;
+          console.log("[CSV] Amostra parseada:", records.slice(0, 3));
+
           if (records.length === 0) {
-            toast.error("Nenhuma linha válida no CSV");
+            toast.error("Nenhuma linha válida no CSV (faltando coluna 'data'?)");
             setImporting(false);
             return;
           }
@@ -370,7 +374,9 @@ function ManageClientDialog({
           const { error } = await supabase.from("campaigns").insert(records);
           setImporting(false);
           if (error) return toast.error(error.message);
-          toast.success(`${records.length} campanhas importadas!`);
+          toast.success(
+            `${records.length} campanhas importadas!${ignored > 0 ? ` (${ignored} ignoradas sem data)` : ""}`
+          );
         } catch (e: any) {
           setImporting(false);
           toast.error("Erro ao processar CSV: " + e.message);
