@@ -31,7 +31,7 @@ function LandingPage() {
         <h1 className="mt-6 text-4xl font-bold tracking-tight md:text-6xl lg:text-7xl">
           Dashboards de tráfego pago
           <br />
-          <span className="text-gradient">simples e poderosos</span>
+          <span className="text-gradient">Diagnósticos Estratégicos</span>
         </h1>
         <p className="mx-auto mt-6 max-w-2xl text-base text-muted-foreground md:text-lg">
           Relatórios profissionais. Métricas claras, interface elegante, zero
