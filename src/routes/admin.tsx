@@ -40,6 +40,40 @@ import {
 } from "lucide-react";
 import Papa from "papaparse";
 
+/**
+ * Faz parse de números em formato BR (1.234,56), US (1234.56) ou misto.
+ * Remove R$, %, espaços, NBSP e aspas. Retorna 0 para inválidos.
+ */
+function parseNumberBR(value: unknown): number {
+  if (value === null || value === undefined) return 0;
+  let s = String(value).trim();
+  if (!s) return 0;
+
+  s = s.replace(/[R$\s\u00A0"']/gi, "").replace(/%/g, "");
+  const negative = s.startsWith("-");
+  if (negative) s = s.slice(1);
+  if (!s) return 0;
+
+  const hasComma = s.includes(",");
+  const hasDot = s.includes(".");
+
+  if (hasComma && hasDot) {
+    s = s.replace(/\./g, "").replace(",", ".");
+  } else if (hasComma) {
+    s = s.replace(",", ".");
+  } else if (hasDot) {
+    const parts = s.split(".");
+    const last = parts[parts.length - 1];
+    if (parts.length > 2 || (parts.length === 2 && last.length === 3 && parts[0].length <= 3)) {
+      s = s.replace(/\./g, "");
+    }
+  }
+
+  const n = parseFloat(s);
+  if (Number.isNaN(n)) return 0;
+  return negative ? -n : n;
+}
+
 export const Route = createFileRoute("/admin")({
   head: () => ({
     meta: [{ title: "Painel Admin — Métrica" }],
@@ -349,20 +383,24 @@ function ManageClientDialog({
       complete: async (results) => {
         try {
           const rows = results.data as any[];
+          const totalRows = rows.length;
           const records = rows
             .map((r) => ({
               client_id: client.id,
               date: r.data || r.date,
               platform: r.plataforma || r.platform || "Meta Ads",
               campaign_name: r.campanha || r.campaign_name || "Sem nome",
-              investment: parseFloat(String(r.investimento || r.investment || "0").replace(",", ".")) || 0,
-              leads: parseInt(String(r.leads || "0")) || 0,
-              revenue: parseFloat(String(r.faturamento || r.revenue || "0").replace(",", ".")) || 0,
+              investment: parseNumberBR(r.investimento ?? r.investment),
+              leads: Math.round(parseNumberBR(r.leads)),
+              revenue: parseNumberBR(r.faturamento ?? r.revenue),
             }))
             .filter((r) => r.date);
 
+          const ignored = totalRows - records.length;
+          console.log("[CSV] Amostra parseada:", records.slice(0, 3));
+
           if (records.length === 0) {
-            toast.error("Nenhuma linha válida no CSV");
+            toast.error("Nenhuma linha válida no CSV (faltando coluna 'data'?)");
             setImporting(false);
             return;
           }
@@ -370,7 +408,9 @@ function ManageClientDialog({
           const { error } = await supabase.from("campaigns").insert(records);
           setImporting(false);
           if (error) return toast.error(error.message);
-          toast.success(`${records.length} campanhas importadas!`);
+          toast.success(
+            `${records.length} campanhas importadas!${ignored > 0 ? ` (${ignored} ignoradas sem data)` : ""}`
+          );
         } catch (e: any) {
           setImporting(false);
           toast.error("Erro ao processar CSV: " + e.message);
