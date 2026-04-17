@@ -34,8 +34,8 @@ function LandingPage() {
           <span className="text-gradient">simples e poderosos</span>
         </h1>
         <p className="mx-auto mt-6 max-w-2xl text-base text-muted-foreground md:text-lg">
-          Entregue relatórios profissionais aos seus clientes. Métricas claras,
-          interface elegante, zero complicação.
+          Relatórios profissionais. Métricas claras, interface elegante, zero
+          complicação.
         </p>
         <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
           <Link to="/login">
