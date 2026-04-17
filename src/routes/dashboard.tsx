@@ -187,11 +187,28 @@ function DashboardPage() {
   if (!client) {
     return (
       <div className="flex min-h-screen items-center justify-center px-4">
-        <div className="text-center">
-          <p className="text-muted-foreground">Nenhum dashboard disponível para sua conta.</p>
-          <Button variant="ghost" onClick={handleLogout} className="mt-4 gap-2">
-            <LogOut className="h-4 w-4" /> Sair
-          </Button>
+        <div className="text-center max-w-md">
+          {isAdmin ? (
+            <>
+              <p className="text-muted-foreground">
+                Selecione um cliente no painel admin para visualizar o dashboard.
+              </p>
+              <Link to="/admin">
+                <Button className="mt-4 gap-2">
+                  <ArrowLeft className="h-4 w-4" /> Ir para o painel admin
+                </Button>
+              </Link>
+            </>
+          ) : (
+            <>
+              <p className="text-muted-foreground">
+                Nenhum dashboard disponível para sua conta.
+              </p>
+              <Button variant="ghost" onClick={handleLogout} className="mt-4 gap-2">
+                <LogOut className="h-4 w-4" /> Sair
+              </Button>
+            </>
+          )}
         </div>
       </div>
     );
