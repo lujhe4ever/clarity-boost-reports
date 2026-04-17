@@ -40,6 +40,40 @@ import {
 } from "lucide-react";
 import Papa from "papaparse";
 
+/**
+ * Faz parse de números em formato BR (1.234,56), US (1234.56) ou misto.
+ * Remove R$, %, espaços, NBSP e aspas. Retorna 0 para inválidos.
+ */
+function parseNumberBR(value: unknown): number {
+  if (value === null || value === undefined) return 0;
+  let s = String(value).trim();
+  if (!s) return 0;
+
+  s = s.replace(/[R$\s\u00A0"']/gi, "").replace(/%/g, "");
+  const negative = s.startsWith("-");
+  if (negative) s = s.slice(1);
+  if (!s) return 0;
+
+  const hasComma = s.includes(",");
+  const hasDot = s.includes(".");
+
+  if (hasComma && hasDot) {
+    s = s.replace(/\./g, "").replace(",", ".");
+  } else if (hasComma) {
+    s = s.replace(",", ".");
+  } else if (hasDot) {
+    const parts = s.split(".");
+    const last = parts[parts.length - 1];
+    if (parts.length > 2 || (parts.length === 2 && last.length === 3 && parts[0].length <= 3)) {
+      s = s.replace(/\./g, "");
+    }
+  }
+
+  const n = parseFloat(s);
+  if (Number.isNaN(n)) return 0;
+  return negative ? -n : n;
+}
+
 export const Route = createFileRoute("/admin")({
   head: () => ({
     meta: [{ title: "Painel Admin — Métrica" }],
