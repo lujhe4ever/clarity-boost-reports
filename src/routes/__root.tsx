@@ -34,9 +34,11 @@ export const Route = createRootRoute({
       { name: "description", content: "Plataforma de dashboards premium para clientes de tráfego pago. Acompanhe investimento, leads, ROI e resultados em tempo real." },
       { name: "author", content: "Métrica" },
       { property: "og:title", content: "Métrica — Dashboards de Tráfego Pago" },
-      { property: "og:description", content: "Relatórios profissionais para clientes de marketing digital." },
+      { property: "og:description", content: "Plataforma de dashboards premium para clientes de tráfego pago. Acompanhe investimento, leads, ROI e resultados em tempo real." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
+      { name: "twitter:title", content: "Métrica — Dashboards de Tráfego Pago" },
+      { name: "twitter:description", content: "Plataforma de dashboards premium para clientes de tráfego pago. Acompanhe investimento, leads, ROI e resultados em tempo real." },
     ],
     links: [
       { rel: "stylesheet", href: appCss },
