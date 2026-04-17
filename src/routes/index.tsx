@@ -63,7 +63,7 @@ function LandingPage() {
             {
               icon: BarChart3,
               title: "Visual premium",
-              desc: "Design moderno que valoriza seu trabalho e impressiona o cliente.",
+              desc: "Design moderno que traz clareza e direcionamento.",
             },
           ].map((f) => (
             <div key={f.title} className="glass-card rounded-2xl p-6">
