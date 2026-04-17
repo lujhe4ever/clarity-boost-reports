@@ -86,10 +86,18 @@ function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<"7" | "30" | "90" | "all">("30");
 
+  // Admin sem client_id não tem dashboard próprio — manda para o painel
   useEffect(() => {
+    if (isAdmin && !search.client_id) {
+      navigate({ to: "/admin" });
+    }
+  }, [isAdmin, search.client_id, navigate]);
+
+  useEffect(() => {
+    if (isAdmin && !search.client_id) return;
     loadData();
     // eslint-disable-next-line
-  }, [user, search.client_id]);
+  }, [user, search.client_id, isAdmin]);
 
   async function loadData() {
     if (!user) return;
