@@ -86,10 +86,18 @@ function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<"7" | "30" | "90" | "all">("30");
 
+  // Admin sem client_id não tem dashboard próprio — manda para o painel
   useEffect(() => {
+    if (isAdmin && !search.client_id) {
+      navigate({ to: "/admin" });
+    }
+  }, [isAdmin, search.client_id, navigate]);
+
+  useEffect(() => {
+    if (isAdmin && !search.client_id) return;
     loadData();
     // eslint-disable-next-line
-  }, [user, search.client_id]);
+  }, [user, search.client_id, isAdmin]);
 
   async function loadData() {
     if (!user) return;
@@ -179,11 +187,28 @@ function DashboardPage() {
   if (!client) {
     return (
       <div className="flex min-h-screen items-center justify-center px-4">
-        <div className="text-center">
-          <p className="text-muted-foreground">Nenhum dashboard disponível para sua conta.</p>
-          <Button variant="ghost" onClick={handleLogout} className="mt-4 gap-2">
-            <LogOut className="h-4 w-4" /> Sair
-          </Button>
+        <div className="text-center max-w-md">
+          {isAdmin ? (
+            <>
+              <p className="text-muted-foreground">
+                Selecione um cliente no painel admin para visualizar o dashboard.
+              </p>
+              <Link to="/admin">
+                <Button className="mt-4 gap-2">
+                  <ArrowLeft className="h-4 w-4" /> Ir para o painel admin
+                </Button>
+              </Link>
+            </>
+          ) : (
+            <>
+              <p className="text-muted-foreground">
+                Nenhum dashboard disponível para sua conta.
+              </p>
+              <Button variant="ghost" onClick={handleLogout} className="mt-4 gap-2">
+                <LogOut className="h-4 w-4" /> Sair
+              </Button>
+            </>
+          )}
         </div>
       </div>
     );
