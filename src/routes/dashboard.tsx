@@ -33,12 +33,13 @@ import {
 import {
   ArrowLeft,
   BarChart3,
-  DollarSign,
+  Eye,
   Loader2,
   LogOut,
   MessageSquare,
+  MousePointerClick,
+  PlayCircle,
   Target,
-  TrendingUp,
   Users,
   Wallet,
 } from "lucide-react";
@@ -69,6 +70,10 @@ type Campaign = {
   investment: number;
   leads: number;
   revenue: number;
+  impressions: number;
+  reach: number;
+  views: number;
+  clicks: number;
 };
 
 type Client = {
