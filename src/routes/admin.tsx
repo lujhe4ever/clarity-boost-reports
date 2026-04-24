@@ -484,46 +484,50 @@ function ManageClientDialog({
 
   async function handleCSV(file: File) {
     setImporting(true);
-    Papa.parse(file, {
-      header: true,
-      skipEmptyLines: true,
-      complete: async (results) => {
-        try {
-          const rows = results.data as any[];
-          const totalRows = rows.length;
-          const records = rows
-            .map((r) => ({
-              client_id: client.id,
-              date: r.data || r.date,
-              platform: r.plataforma || r.platform || "Meta Ads",
-              campaign_name: r.campanha || r.campaign_name || "Sem nome",
-              investment: parseNumberBR(r.investimento ?? r.investment),
-              leads: Math.round(parseNumberBR(r.leads)),
-              revenue: parseNumberBR(r.faturamento ?? r.revenue),
-            }))
-            .filter((r) => r.date);
+    try {
+      const rows = await readSpreadsheet(file);
+      const totalRows = rows.length;
 
-          const ignored = totalRows - records.length;
-          console.log("[CSV] Amostra parseada:", records.slice(0, 3));
+      const records = rows
+        .map((r) => {
+          const rawDate = pickField(r, [...FIELD_ALIASES.date]);
+          const date = parseDateToISO(rawDate);
+          const platformVal = pickField(r, [...FIELD_ALIASES.platform]);
+          const campaignVal = pickField(r, [...FIELD_ALIASES.campaign_name]);
+          return {
+            client_id: client.id,
+            date,
+            platform: (platformVal ? String(platformVal).trim() : "") || "Meta Ads",
+            campaign_name: (campaignVal ? String(campaignVal).trim() : "") || "Sem nome",
+            investment: parseNumberBR(pickField(r, [...FIELD_ALIASES.investment])),
+            leads: Math.round(parseNumberBR(pickField(r, [...FIELD_ALIASES.leads]))),
+            revenue: parseNumberBR(pickField(r, [...FIELD_ALIASES.revenue])),
+          };
+        })
+        .filter((r) => r.date);
 
-          if (records.length === 0) {
-            toast.error("Nenhuma linha válida no CSV (faltando coluna 'data'?)");
-            setImporting(false);
-            return;
-          }
+      const ignored = totalRows - records.length;
+      console.log("[Import] Colunas detectadas:", rows[0] ? Object.keys(rows[0]) : []);
+      console.log("[Import] Amostra parseada:", records.slice(0, 3));
 
-          const { error } = await supabase.from("campaigns").insert(records);
-          setImporting(false);
-          if (error) return toast.error(error.message);
-          toast.success(
-            `${records.length} campanhas importadas!${ignored > 0 ? ` (${ignored} ignoradas sem data)` : ""}`
-          );
-        } catch (e: any) {
-          setImporting(false);
-          toast.error("Erro ao processar CSV: " + e.message);
-        }
-      },
-    });
+      if (records.length === 0) {
+        toast.error(
+          "Nenhuma linha válida encontrada. Verifique se o arquivo tem coluna de data (data, date, dia, início dos relatórios)."
+        );
+        setImporting(false);
+        return;
+      }
+
+      const { error } = await supabase.from("campaigns").insert(records);
+      setImporting(false);
+      if (error) return toast.error(error.message);
+      toast.success(
+        `${records.length} campanhas importadas!${ignored > 0 ? ` (${ignored} ignoradas sem data)` : ""}`
+      );
+    } catch (e: any) {
+      setImporting(false);
+      toast.error("Erro ao processar arquivo: " + (e?.message ?? String(e)));
+    }
   }
 
   async function handleClearCampaigns() {
