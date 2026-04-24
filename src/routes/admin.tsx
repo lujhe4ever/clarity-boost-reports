@@ -542,7 +542,7 @@ function ManageClientDialog({
         <DialogHeader>
           <DialogTitle>{client.company_name}</DialogTitle>
           <DialogDescription>
-            Atualize a mensagem do gestor, observações e importe campanhas via CSV.
+            Atualize a mensagem do gestor, observações e importe campanhas via CSV ou Excel.
           </DialogDescription>
         </DialogHeader>
 
@@ -575,19 +575,22 @@ function ManageClientDialog({
 
           <div className="rounded-lg border border-border bg-muted/30 p-4">
             <div className="flex items-center gap-2 text-sm font-medium">
-              <Upload className="h-4 w-4 text-primary" /> Importar campanhas (CSV)
+              <Upload className="h-4 w-4 text-primary" /> Importar campanhas (CSV ou Excel)
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              Colunas: <span className="font-mono">data, plataforma, campanha, investimento, leads, faturamento</span>
+              Aceita <span className="font-mono">.csv</span>, <span className="font-mono">.xlsx</span> e{" "}
+              <span className="font-mono">.xls</span> exportados do Meta Ads. Detectamos automaticamente:
+              data, campanha, valor usado, resultados e valor de conversão.
             </p>
             <input
               type="file"
-              accept=".csv"
+              accept=".csv,.xlsx,.xls,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
               className="mt-3 block w-full text-xs file:mr-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-primary-foreground"
               disabled={importing}
               onChange={(e) => {
                 const f = e.target.files?.[0];
                 if (f) handleCSV(f);
+                e.target.value = "";
               }}
             />
             <button
