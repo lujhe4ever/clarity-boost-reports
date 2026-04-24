@@ -113,6 +113,18 @@ const FIELD_ALIASES = {
     "purchases conversion value",
     "revenue",
   ],
+  impressions: ["impressoes", "impressions"],
+  reach: ["alcance", "reach", "pessoas alcancadas"],
+  views: [
+    "visualizacoes",
+    "visualizacoes de video",
+    "thruplays",
+    "reproducoes de video de 3 segundos",
+    "video views",
+    "3 second video views",
+    "3-second video views",
+  ],
+  clicks: ["cliques", "cliques no link", "clicks", "link clicks", "cliques todos", "all clicks"],
 } as const;
 
 /** Converte vários formatos de data para ISO yyyy-mm-dd. Retorna "" se inválido. */
@@ -502,6 +514,10 @@ function ManageClientDialog({
             investment: parseNumberBR(pickField(r, [...FIELD_ALIASES.investment])),
             leads: Math.round(parseNumberBR(pickField(r, [...FIELD_ALIASES.leads]))),
             revenue: parseNumberBR(pickField(r, [...FIELD_ALIASES.revenue])),
+            impressions: Math.round(parseNumberBR(pickField(r, [...FIELD_ALIASES.impressions]))),
+            reach: Math.round(parseNumberBR(pickField(r, [...FIELD_ALIASES.reach]))),
+            views: Math.round(parseNumberBR(pickField(r, [...FIELD_ALIASES.views]))),
+            clicks: Math.round(parseNumberBR(pickField(r, [...FIELD_ALIASES.clicks]))),
           };
         })
         .filter((r) => r.date);

@@ -17,36 +17,48 @@ export type Database = {
       campaigns: {
         Row: {
           campaign_name: string
+          clicks: number
           client_id: string
           created_at: string
           date: string
           id: string
+          impressions: number
           investment: number
           leads: number
           platform: string
+          reach: number
           revenue: number
+          views: number
         }
         Insert: {
           campaign_name: string
+          clicks?: number
           client_id: string
           created_at?: string
           date: string
           id?: string
+          impressions?: number
           investment?: number
           leads?: number
           platform?: string
+          reach?: number
           revenue?: number
+          views?: number
         }
         Update: {
           campaign_name?: string
+          clicks?: number
           client_id?: string
           created_at?: string
           date?: string
           id?: string
+          impressions?: number
           investment?: number
           leads?: number
           platform?: string
+          reach?: number
           revenue?: number
+          views?: number
         }
         Relationships: [
           {

@@ -1,46 +1,61 @@
 ## Diagnóstico
 
-Hoje o input em `src/routes/admin.tsx` (linhas 472–481) tem `accept=".csv"` e o `handleCSV` usa apenas `Papa.parse`, então:
-
-1. Arquivos `.xlsx`/`.xls` baixados do Gerenciador de Anúncios do Meta nem são aceitos pelo seletor.
-2. O parser só procura colunas com nomes em PT exato (`investimento`, `leads`, `faturamento`, `data`, `campanha`). Os exports nativos do Meta usam nomes como **"Valor usado (BRL)"**, **"Resultados"**, **"Nome da campanha"**, **"Início dos relatórios"** — então mesmo CSVs do Meta caem fora.
+1. **Métricas faltantes no banco**: a tabela `campaigns` só tem `investment`, `leads`, `revenue`. Não tem `impressions`, `reach`, `views`, `clicks`. Sem armazenar essas colunas, não há como mostrá-las no dashboard.
+2. **Dashboard atual mostra 5 KPIs diferentes do pedido**: Investimento, Faturamento, ROI, Resultados, Custo por resultado.
+3. **Arredondamento que perde precisão**:
+   - `fmtBRL` usa `maximumFractionDigits: 0` → `R$ 0,95` vira `R$ 1`. Centavos somem.
+   - `Math.round(parseNumberBR(r.leads))` força inteiro nos resultados (OK para "Resultados" do Meta, que sempre vem inteiro, mas para impressões/alcance/views/cliques também é inteiro — ainda OK; só precisamos não arredondar valores monetários e percentuais).
+   - O parser `parseNumberBR` já lê corretamente `0,32%`, `1.2`, `1,25` — o problema é só na exibição.
 
 ## Plano
 
-Tornar o uploader único capaz de ler **CSV e Excel do Meta Ads**, com detecção automática de colunas (aliases), mantendo um arquivo por vez como hoje.
+### 1. Adicionar colunas no banco (migration)
+Adicionar à tabela `campaigns` (todas com `default 0`, não-nulas, para não quebrar dados existentes):
+- `impressions` integer
+- `reach` integer
+- `views` integer (visualizações de vídeo / thruplays)
+- `clicks` integer
 
-### 1. Aceitar Excel além de CSV
-- Adicionar dependência `xlsx` (SheetJS) — funciona no browser, sem backend.
-- Mudar `accept` do input para `.csv,.xlsx,.xls,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`.
-- Roteador de parsing por extensão/MIME:
-  - `.csv` → Papa Parse (já temos)
-  - `.xlsx` / `.xls` → `xlsx.read()` → `sheet_to_json` da primeira aba → mesmo pipeline de normalização.
+Mantém `investment`, `leads`, `revenue` como estão (continuam servindo "Valor usado" e cálculos existentes do banco).
 
-### 2. Mapeamento robusto de colunas (Meta + genérico)
-Criar função `pickField(row, aliases[])` que normaliza o nome da coluna (lowercase, sem acento, sem parênteses/unidades) e bate contra uma lista de aliases. Aliases iniciais:
+### 2. Importador (admin.tsx) — ler as novas métricas do Meta
+Adicionar aliases ao `FIELD_ALIASES`:
+- **impressions**: `impressões`, `impressions`
+- **reach**: `alcance`, `reach`, `pessoas alcançadas`
+- **views**: `visualizações`, `visualizações de vídeo`, `thruplays`, `reproduções de vídeo de 3 segundos`, `video views`, `3-second video views`, `thruplays`
+- **clicks**: `cliques`, `cliques no link`, `clicks`, `link clicks`, `cliques (todos)`
 
-- **date**: `data`, `date`, `dia`, `início dos relatórios`, `data de início`, `reporting starts`, `day`
-- **campaign_name**: `campanha`, `nome da campanha`, `campaign name`, `campaign`
-- **platform**: `plataforma`, `platform`, `veiculação`, `placement` (default "Meta Ads" se vazio)
-- **investment**: `investimento`, `valor usado`, `valor usado (brl)`, `gasto`, `custo`, `amount spent`, `spend`, `cost`
-- **leads**: `leads`, `resultados`, `results`, `conversões`, `conversions`
-- **revenue**: `faturamento`, `receita`, `valor de conversão`, `purchase conversion value`, `revenue`, `purchases conversion value`
+Inserir os 4 campos em cada `record` do `handleCSV` usando `Math.round(parseNumberBR(...))` (são inteiros no Meta).
 
-`parseNumberBR` permanece como está (já lida com `R$ 1.234,56`).
+### 3. Dashboard — substituir KPIs e ajustar exibição
 
-### 3. Tratamento de datas
-Excel guarda datas como número serial. Quando vier número, converter via `XLSX.SSF.format("yyyy-mm-dd", n)` ou utilitário equivalente. Quando vier string `dd/mm/aaaa`, converter para ISO `yyyy-mm-dd` (Postgres `date` exige ISO). Linhas sem data continuam sendo ignoradas com contagem no toast.
+**KPIs (em ordem, conforme pedido)**: Resultados, Valor usado, Impressões, Alcance, Visualizações, Cliques.
 
-### 4. UX no diálogo
-- Atualizar a legenda de colunas para algo como: "Aceita CSV ou Excel exportado do Meta Ads. Detectamos automaticamente: data, campanha, valor usado, resultados, valor de conversão."
-- Toast mantém o padrão atual: "X campanhas importadas (Y ignoradas sem data)".
-- Console log da amostra parseada (já existe) continua para depuração.
+Layout em grid `grid-cols-2 md:grid-cols-3 lg:grid-cols-6`. Remove: Faturamento, ROI, Custo por resultado dos KPIs principais (CPL fica como coluna na tabela).
+
+**Formatação correta de números (sem arredondamento perdendo precisão)**:
+- Helper `fmtBRL(v)` aceita parâmetro de casas decimais; padrão **2 casas** (`R$ 0,95` em vez de `R$ 1`).
+- Helper novo `fmtInt(v)` para impressões/alcance/views/cliques/leads — `toLocaleString("pt-BR")` sem casas decimais (são inteiros por natureza).
+- Helper novo `fmtPct(v, dec=2)` para percentuais (CTR etc.) — `0,32%` em vez de `0%`.
+- Helper novo `fmtDec(v, dec=2)` para decimais soltos como frequência (1,25).
+
+Aplicar em **todos** os pontos: KPIs, tooltips dos gráficos e tabela. O `CustomTooltip` ganha props `format` para escolher a formatação por dataKey.
+
+**Tabela "Resumo por campanha"** — colunas atualizadas na ordem pedida:
+Campanha | Resultados | Valor usado | Impressões | Alcance | Visualizações | Cliques | Custo/Resultado
+
+(mantém Custo/Resultado como bônus útil — mas formatado com 2 casas).
+
+**Gráficos**: mantenho os dois atuais (Investimento ao longo do tempo e Resultados por dia). O gráfico de investimento passa a usar formatação com centavos no tooltip; mantém escala em "k" no eixo Y para legibilidade.
+
+### 4. Tipo `Campaign` no front
+Adicionar `impressions`, `reach`, `views`, `clicks` ao tipo, ao `useMemo` de totals, ao chartData e ao campaignSummary.
 
 ### Arquivos
-- `package.json` — adicionar `xlsx`
-- `src/routes/admin.tsx` — único arquivo de código alterado (parser, mapeamento, UI do input)
+- **Migration SQL** — adicionar 4 colunas em `campaigns`
+- `src/routes/admin.tsx` — aliases novos + parsing dos 4 campos
+- `src/routes/dashboard.tsx` — KPIs reordenados, helpers de formatação corretos, tabela e tipos atualizados
 
-### Fora de escopo
-- Múltiplos arquivos por upload (você confirmou que não precisa agora).
-- Suporte a Google Ads / TikTok (você confirmou só Meta agora — mas os aliases genéricos `cost`/`spend`/`conversions` que vou incluir já cobrem boa parte se um dia precisar).
-- Coluna `cost_per_result` na tabela `campaigns` (continua sendo calculado).
+### Fora de escopo (posso fazer depois)
+- Reformular gráficos para mostrar Impressões/Alcance/Cliques como séries adicionais
+- KPIs derivados (CTR = cliques/impressões, CPM = custo/impressões × 1000, frequência = impressões/alcance)

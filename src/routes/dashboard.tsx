@@ -33,12 +33,13 @@ import {
 import {
   ArrowLeft,
   BarChart3,
-  DollarSign,
+  Eye,
   Loader2,
   LogOut,
   MessageSquare,
+  MousePointerClick,
+  PlayCircle,
   Target,
-  TrendingUp,
   Users,
   Wallet,
 } from "lucide-react";
@@ -69,6 +70,10 @@ type Campaign = {
   investment: number;
   leads: number;
   revenue: number;
+  impressions: number;
+  reach: number;
+  views: number;
+  clicks: number;
 };
 
 type Client = {
@@ -138,11 +143,14 @@ function DashboardPage() {
 
   const totals = useMemo(() => {
     const investment = filtered.reduce((s, c) => s + Number(c.investment), 0);
-    const leads = filtered.reduce((s, c) => s + c.leads, 0);
+    const leads = filtered.reduce((s, c) => s + Number(c.leads), 0);
     const revenue = filtered.reduce((s, c) => s + Number(c.revenue), 0);
-    const roi = investment > 0 ? ((revenue - investment) / investment) * 100 : 0;
+    const impressions = filtered.reduce((s, c) => s + Number(c.impressions ?? 0), 0);
+    const reach = filtered.reduce((s, c) => s + Number(c.reach ?? 0), 0);
+    const views = filtered.reduce((s, c) => s + Number(c.views ?? 0), 0);
+    const clicks = filtered.reduce((s, c) => s + Number(c.clicks ?? 0), 0);
     const cpl = leads > 0 ? investment / leads : 0;
-    return { investment, leads, revenue, roi, cpl };
+    return { investment, leads, revenue, impressions, reach, views, clicks, cpl };
   }, [filtered]);
 
   const chartData = useMemo(() => {
@@ -151,7 +159,7 @@ function DashboardPage() {
       const d = c.date;
       const existing = map.get(d) ?? { date: d, investment: 0, leads: 0, revenue: 0 };
       existing.investment += Number(c.investment);
-      existing.leads += c.leads;
+      existing.leads += Number(c.leads);
       existing.revenue += Number(c.revenue);
       map.set(d, existing);
     });
@@ -164,13 +172,27 @@ function DashboardPage() {
   }, [filtered]);
 
   const campaignSummary = useMemo(() => {
-    const map = new Map<string, { name: string; investment: number; leads: number; revenue: number }>();
+    type Row = {
+      name: string;
+      investment: number;
+      leads: number;
+      impressions: number;
+      reach: number;
+      views: number;
+      clicks: number;
+    };
+    const map = new Map<string, Row>();
     filtered.forEach((c) => {
       const key = c.campaign_name;
-      const ex = map.get(key) ?? { name: key, investment: 0, leads: 0, revenue: 0 };
+      const ex =
+        map.get(key) ??
+        { name: key, investment: 0, leads: 0, impressions: 0, reach: 0, views: 0, clicks: 0 };
       ex.investment += Number(c.investment);
-      ex.leads += c.leads;
-      ex.revenue += Number(c.revenue);
+      ex.leads += Number(c.leads);
+      ex.impressions += Number(c.impressions ?? 0);
+      ex.reach += Number(c.reach ?? 0);
+      ex.views += Number(c.views ?? 0);
+      ex.clicks += Number(c.clicks ?? 0);
       map.set(key, ex);
     });
     return Array.from(map.values()).sort((a, b) => b.investment - a.investment);
@@ -268,36 +290,42 @@ function DashboardPage() {
           </div>
         )}
 
-        {/* KPIs */}
-        <div className="grid gap-4 grid-cols-2 lg:grid-cols-5">
+        {/* KPIs — ordem pedida: Resultados, Valor usado, Impressões, Alcance, Visualizações, Cliques */}
+        <div className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
           <KpiCard
-            label="Investimento"
+            label="Resultados"
+            value={fmtInt(totals.leads)}
+            icon={Target}
+            tone="success"
+          />
+          <KpiCard
+            label="Valor usado"
             value={fmtBRL(totals.investment)}
             icon={Wallet}
             tone="primary"
           />
           <KpiCard
-            label="Faturamento"
-            value={fmtBRL(totals.revenue)}
-            icon={DollarSign}
-            tone="success"
+            label="Impressões"
+            value={fmtInt(totals.impressions)}
+            icon={BarChart3}
+            tone="primary"
           />
           <KpiCard
-            label="Retorno (ROI)"
-            value={`${totals.roi.toFixed(1)}%`}
-            icon={TrendingUp}
-            tone={totals.roi >= 0 ? "success" : "destructive"}
-          />
-          <KpiCard
-            label="Resultados"
-            value={totals.leads.toLocaleString("pt-BR")}
+            label="Alcance"
+            value={fmtInt(totals.reach)}
             icon={Users}
             tone="primary"
           />
           <KpiCard
-            label="Custo por resultado"
-            value={fmtBRL(totals.cpl)}
-            icon={Target}
+            label="Visualizações"
+            value={fmtInt(totals.views)}
+            icon={PlayCircle}
+            tone="primary"
+          />
+          <KpiCard
+            label="Cliques"
+            value={fmtInt(totals.clicks)}
+            icon={MousePointerClick}
             tone="primary"
           />
         </div>
@@ -313,7 +341,7 @@ function DashboardPage() {
           <>
             {/* Charts */}
             <div className="grid gap-6 lg:grid-cols-2">
-              <ChartCard title="Investimento ao longo do tempo">
+              <ChartCard title="Valor usado ao longo do tempo">
                 <ResponsiveContainer width="100%" height={260}>
                   <AreaChart data={chartData}>
                     <defs>
@@ -324,27 +352,27 @@ function DashboardPage() {
                     </defs>
                     <CartesianGrid stroke="oklch(0.28 0.025 250)" strokeDasharray="3 3" vertical={false} />
                     <XAxis dataKey="label" stroke="oklch(0.65 0.02 250)" fontSize={11} tickLine={false} axisLine={false} />
-                    <YAxis stroke="oklch(0.65 0.02 250)" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v) => `R$${(v/1000).toFixed(0)}k`} />
-                    <Tooltip content={<CustomTooltip prefix="R$ " />} />
+                    <YAxis stroke="oklch(0.65 0.02 250)" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v) => `R$${(v/1000).toFixed(1)}k`} />
+                    <Tooltip content={<CustomTooltip formatType="currency" />} />
                     <Area type="monotone" dataKey="investment" stroke="oklch(0.68 0.20 245)" strokeWidth={2} fill="url(#grad-inv)" />
                   </AreaChart>
                 </ResponsiveContainer>
               </ChartCard>
 
-              <ChartCard title="Resultados (leads) por dia">
+              <ChartCard title="Resultados por dia">
                 <ResponsiveContainer width="100%" height={260}>
                   <LineChart data={chartData}>
                     <CartesianGrid stroke="oklch(0.28 0.025 250)" strokeDasharray="3 3" vertical={false} />
                     <XAxis dataKey="label" stroke="oklch(0.65 0.02 250)" fontSize={11} tickLine={false} axisLine={false} />
                     <YAxis stroke="oklch(0.65 0.02 250)" fontSize={11} tickLine={false} axisLine={false} />
-                    <Tooltip content={<CustomTooltip />} />
+                    <Tooltip content={<CustomTooltip formatType="int" />} />
                     <Line type="monotone" dataKey="leads" stroke="oklch(0.70 0.18 155)" strokeWidth={2.5} dot={{ r: 3, fill: "oklch(0.70 0.18 155)" }} />
                   </LineChart>
                 </ResponsiveContainer>
               </ChartCard>
             </div>
 
-            {/* Campaign table */}
+            {/* Campaign table — colunas na ordem pedida */}
             <div className="glass-card rounded-2xl p-6">
               <h3 className="text-lg font-semibold mb-4">Resumo por campanha</h3>
               <div className="overflow-x-auto">
@@ -352,20 +380,26 @@ function DashboardPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Campanha</TableHead>
-                      <TableHead className="text-right">Investido</TableHead>
                       <TableHead className="text-right">Resultados</TableHead>
+                      <TableHead className="text-right">Valor usado</TableHead>
+                      <TableHead className="text-right">Impressões</TableHead>
+                      <TableHead className="text-right">Alcance</TableHead>
+                      <TableHead className="text-right">Visualizações</TableHead>
+                      <TableHead className="text-right">Cliques</TableHead>
                       <TableHead className="text-right">Custo/Resultado</TableHead>
-                      <TableHead className="text-right">Faturamento</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {campaignSummary.map((c) => (
                       <TableRow key={c.name}>
                         <TableCell className="font-medium">{c.name}</TableCell>
+                        <TableCell className="text-right tabular">{fmtInt(c.leads)}</TableCell>
                         <TableCell className="text-right tabular">{fmtBRL(c.investment)}</TableCell>
-                        <TableCell className="text-right tabular">{c.leads.toLocaleString("pt-BR")}</TableCell>
+                        <TableCell className="text-right tabular">{fmtInt(c.impressions)}</TableCell>
+                        <TableCell className="text-right tabular">{fmtInt(c.reach)}</TableCell>
+                        <TableCell className="text-right tabular">{fmtInt(c.views)}</TableCell>
+                        <TableCell className="text-right tabular">{fmtInt(c.clicks)}</TableCell>
                         <TableCell className="text-right tabular">{fmtBRL(c.leads > 0 ? c.investment / c.leads : 0)}</TableCell>
-                        <TableCell className="text-right tabular text-success">{fmtBRL(c.revenue)}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -422,25 +456,62 @@ function ChartCard({ title, children }: { title: string; children: React.ReactNo
   );
 }
 
-function CustomTooltip({ active, payload, label, prefix = "" }: any) {
+function CustomTooltip({
+  active,
+  payload,
+  label,
+  formatType = "int",
+}: {
+  active?: boolean;
+  payload?: any[];
+  label?: string;
+  formatType?: "int" | "currency" | "decimal" | "percent";
+}) {
   if (!active || !payload?.length) return null;
+  const fmt = (n: number) => {
+    if (formatType === "currency") return fmtBRL(n);
+    if (formatType === "decimal") return fmtDec(n);
+    if (formatType === "percent") return fmtPct(n);
+    return fmtInt(n);
+  };
   return (
     <div className="glass-card rounded-lg px-3 py-2 text-xs">
       <div className="font-medium">{label}</div>
       {payload.map((p: any) => (
         <div key={p.dataKey} className="tabular text-muted-foreground">
-          {prefix}
-          {Number(p.value).toLocaleString("pt-BR")}
+          {fmt(Number(p.value))}
         </div>
       ))}
     </div>
   );
 }
 
+/** Moeda BRL com 2 casas decimais — preserva centavos (R$ 0,95 em vez de R$ 1). */
 function fmtBRL(v: number) {
   return new Intl.NumberFormat("pt-BR", {
     style: "currency",
     currency: "BRL",
-    maximumFractionDigits: 0,
-  }).format(v);
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Number(v) || 0);
+}
+
+/** Inteiro com separador de milhar pt-BR. Para impressões, alcance, cliques, leads. */
+function fmtInt(v: number) {
+  return new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 }).format(
+    Math.round(Number(v) || 0)
+  );
+}
+
+/** Decimal com casas configuráveis — para frequência, etc. */
+function fmtDec(v: number, dec = 2) {
+  return new Intl.NumberFormat("pt-BR", {
+    minimumFractionDigits: dec,
+    maximumFractionDigits: dec,
+  }).format(Number(v) || 0);
+}
+
+/** Percentual com 2 casas — preserva valores como 0,32%. */
+function fmtPct(v: number, dec = 2) {
+  return `${fmtDec(v, dec)}%`;
 }
