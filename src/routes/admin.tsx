@@ -514,6 +514,10 @@ function ManageClientDialog({
             investment: parseNumberBR(pickField(r, [...FIELD_ALIASES.investment])),
             leads: Math.round(parseNumberBR(pickField(r, [...FIELD_ALIASES.leads]))),
             revenue: parseNumberBR(pickField(r, [...FIELD_ALIASES.revenue])),
+            impressions: Math.round(parseNumberBR(pickField(r, [...FIELD_ALIASES.impressions]))),
+            reach: Math.round(parseNumberBR(pickField(r, [...FIELD_ALIASES.reach]))),
+            views: Math.round(parseNumberBR(pickField(r, [...FIELD_ALIASES.views]))),
+            clicks: Math.round(parseNumberBR(pickField(r, [...FIELD_ALIASES.clicks]))),
           };
         })
         .filter((r) => r.date);
