@@ -456,25 +456,62 @@ function ChartCard({ title, children }: { title: string; children: React.ReactNo
   );
 }
 
-function CustomTooltip({ active, payload, label, prefix = "" }: any) {
+function CustomTooltip({
+  active,
+  payload,
+  label,
+  formatType = "int",
+}: {
+  active?: boolean;
+  payload?: any[];
+  label?: string;
+  formatType?: "int" | "currency" | "decimal" | "percent";
+}) {
   if (!active || !payload?.length) return null;
+  const fmt = (n: number) => {
+    if (formatType === "currency") return fmtBRL(n);
+    if (formatType === "decimal") return fmtDec(n);
+    if (formatType === "percent") return fmtPct(n);
+    return fmtInt(n);
+  };
   return (
     <div className="glass-card rounded-lg px-3 py-2 text-xs">
       <div className="font-medium">{label}</div>
       {payload.map((p: any) => (
         <div key={p.dataKey} className="tabular text-muted-foreground">
-          {prefix}
-          {Number(p.value).toLocaleString("pt-BR")}
+          {fmt(Number(p.value))}
         </div>
       ))}
     </div>
   );
 }
 
+/** Moeda BRL com 2 casas decimais — preserva centavos (R$ 0,95 em vez de R$ 1). */
 function fmtBRL(v: number) {
   return new Intl.NumberFormat("pt-BR", {
     style: "currency",
     currency: "BRL",
-    maximumFractionDigits: 0,
-  }).format(v);
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Number(v) || 0);
+}
+
+/** Inteiro com separador de milhar pt-BR. Para impressões, alcance, cliques, leads. */
+function fmtInt(v: number) {
+  return new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 }).format(
+    Math.round(Number(v) || 0)
+  );
+}
+
+/** Decimal com casas configuráveis — para frequência, etc. */
+function fmtDec(v: number, dec = 2) {
+  return new Intl.NumberFormat("pt-BR", {
+    minimumFractionDigits: dec,
+    maximumFractionDigits: dec,
+  }).format(Number(v) || 0);
+}
+
+/** Percentual com 2 casas — preserva valores como 0,32%. */
+function fmtPct(v: number, dec = 2) {
+  return `${fmtDec(v, dec)}%`;
 }
