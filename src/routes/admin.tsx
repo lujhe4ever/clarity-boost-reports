@@ -113,6 +113,18 @@ const FIELD_ALIASES = {
     "purchases conversion value",
     "revenue",
   ],
+  impressions: ["impressoes", "impressions"],
+  reach: ["alcance", "reach", "pessoas alcancadas"],
+  views: [
+    "visualizacoes",
+    "visualizacoes de video",
+    "thruplays",
+    "reproducoes de video de 3 segundos",
+    "video views",
+    "3 second video views",
+    "3-second video views",
+  ],
+  clicks: ["cliques", "cliques no link", "clicks", "link clicks", "cliques todos", "all clicks"],
 } as const;
 
 /** Converte vários formatos de data para ISO yyyy-mm-dd. Retorna "" se inválido. */
