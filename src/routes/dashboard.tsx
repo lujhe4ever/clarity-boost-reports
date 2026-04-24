@@ -290,36 +290,42 @@ function DashboardPage() {
           </div>
         )}
 
-        {/* KPIs */}
-        <div className="grid gap-4 grid-cols-2 lg:grid-cols-5">
+        {/* KPIs — ordem pedida: Resultados, Valor usado, Impressões, Alcance, Visualizações, Cliques */}
+        <div className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
           <KpiCard
-            label="Investimento"
+            label="Resultados"
+            value={fmtInt(totals.leads)}
+            icon={Target}
+            tone="success"
+          />
+          <KpiCard
+            label="Valor usado"
             value={fmtBRL(totals.investment)}
             icon={Wallet}
             tone="primary"
           />
           <KpiCard
-            label="Faturamento"
-            value={fmtBRL(totals.revenue)}
-            icon={DollarSign}
-            tone="success"
+            label="Impressões"
+            value={fmtInt(totals.impressions)}
+            icon={BarChart3}
+            tone="primary"
           />
           <KpiCard
-            label="Retorno (ROI)"
-            value={`${totals.roi.toFixed(1)}%`}
-            icon={TrendingUp}
-            tone={totals.roi >= 0 ? "success" : "destructive"}
-          />
-          <KpiCard
-            label="Resultados"
-            value={totals.leads.toLocaleString("pt-BR")}
+            label="Alcance"
+            value={fmtInt(totals.reach)}
             icon={Users}
             tone="primary"
           />
           <KpiCard
-            label="Custo por resultado"
-            value={fmtBRL(totals.cpl)}
-            icon={Target}
+            label="Visualizações"
+            value={fmtInt(totals.views)}
+            icon={PlayCircle}
+            tone="primary"
+          />
+          <KpiCard
+            label="Cliques"
+            value={fmtInt(totals.clicks)}
+            icon={MousePointerClick}
             tone="primary"
           />
         </div>
@@ -335,7 +341,7 @@ function DashboardPage() {
           <>
             {/* Charts */}
             <div className="grid gap-6 lg:grid-cols-2">
-              <ChartCard title="Investimento ao longo do tempo">
+              <ChartCard title="Valor usado ao longo do tempo">
                 <ResponsiveContainer width="100%" height={260}>
                   <AreaChart data={chartData}>
                     <defs>
@@ -346,27 +352,27 @@ function DashboardPage() {
                     </defs>
                     <CartesianGrid stroke="oklch(0.28 0.025 250)" strokeDasharray="3 3" vertical={false} />
                     <XAxis dataKey="label" stroke="oklch(0.65 0.02 250)" fontSize={11} tickLine={false} axisLine={false} />
-                    <YAxis stroke="oklch(0.65 0.02 250)" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v) => `R$${(v/1000).toFixed(0)}k`} />
-                    <Tooltip content={<CustomTooltip prefix="R$ " />} />
+                    <YAxis stroke="oklch(0.65 0.02 250)" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v) => `R$${(v/1000).toFixed(1)}k`} />
+                    <Tooltip content={<CustomTooltip formatType="currency" />} />
                     <Area type="monotone" dataKey="investment" stroke="oklch(0.68 0.20 245)" strokeWidth={2} fill="url(#grad-inv)" />
                   </AreaChart>
                 </ResponsiveContainer>
               </ChartCard>
 
-              <ChartCard title="Resultados (leads) por dia">
+              <ChartCard title="Resultados por dia">
                 <ResponsiveContainer width="100%" height={260}>
                   <LineChart data={chartData}>
                     <CartesianGrid stroke="oklch(0.28 0.025 250)" strokeDasharray="3 3" vertical={false} />
                     <XAxis dataKey="label" stroke="oklch(0.65 0.02 250)" fontSize={11} tickLine={false} axisLine={false} />
                     <YAxis stroke="oklch(0.65 0.02 250)" fontSize={11} tickLine={false} axisLine={false} />
-                    <Tooltip content={<CustomTooltip />} />
+                    <Tooltip content={<CustomTooltip formatType="int" />} />
                     <Line type="monotone" dataKey="leads" stroke="oklch(0.70 0.18 155)" strokeWidth={2.5} dot={{ r: 3, fill: "oklch(0.70 0.18 155)" }} />
                   </LineChart>
                 </ResponsiveContainer>
               </ChartCard>
             </div>
 
-            {/* Campaign table */}
+            {/* Campaign table — colunas na ordem pedida */}
             <div className="glass-card rounded-2xl p-6">
               <h3 className="text-lg font-semibold mb-4">Resumo por campanha</h3>
               <div className="overflow-x-auto">
@@ -374,20 +380,26 @@ function DashboardPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Campanha</TableHead>
-                      <TableHead className="text-right">Investido</TableHead>
                       <TableHead className="text-right">Resultados</TableHead>
+                      <TableHead className="text-right">Valor usado</TableHead>
+                      <TableHead className="text-right">Impressões</TableHead>
+                      <TableHead className="text-right">Alcance</TableHead>
+                      <TableHead className="text-right">Visualizações</TableHead>
+                      <TableHead className="text-right">Cliques</TableHead>
                       <TableHead className="text-right">Custo/Resultado</TableHead>
-                      <TableHead className="text-right">Faturamento</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {campaignSummary.map((c) => (
                       <TableRow key={c.name}>
                         <TableCell className="font-medium">{c.name}</TableCell>
+                        <TableCell className="text-right tabular">{fmtInt(c.leads)}</TableCell>
                         <TableCell className="text-right tabular">{fmtBRL(c.investment)}</TableCell>
-                        <TableCell className="text-right tabular">{c.leads.toLocaleString("pt-BR")}</TableCell>
+                        <TableCell className="text-right tabular">{fmtInt(c.impressions)}</TableCell>
+                        <TableCell className="text-right tabular">{fmtInt(c.reach)}</TableCell>
+                        <TableCell className="text-right tabular">{fmtInt(c.views)}</TableCell>
+                        <TableCell className="text-right tabular">{fmtInt(c.clicks)}</TableCell>
                         <TableCell className="text-right tabular">{fmtBRL(c.leads > 0 ? c.investment / c.leads : 0)}</TableCell>
-                        <TableCell className="text-right tabular text-success">{fmtBRL(c.revenue)}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
