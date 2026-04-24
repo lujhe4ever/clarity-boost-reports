@@ -39,6 +39,7 @@ import {
   MessageSquare,
 } from "lucide-react";
 import Papa from "papaparse";
+import * as XLSX from "xlsx";
 
 /**
  * Faz parse de números em formato BR (1.234,56), US (1234.56) ou misto.
@@ -46,6 +47,7 @@ import Papa from "papaparse";
  */
 function parseNumberBR(value: unknown): number {
   if (value === null || value === undefined) return 0;
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
   let s = String(value).trim();
   if (!s) return 0;
 
@@ -72,6 +74,111 @@ function parseNumberBR(value: unknown): number {
   const n = parseFloat(s);
   if (Number.isNaN(n)) return 0;
   return negative ? -n : n;
+}
+
+/** Normaliza nome de coluna: lowercase, sem acento, sem parênteses/unidades, sem espaços extras. */
+function normalizeKey(k: string): string {
+  return k
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\([^)]*\)/g, "")
+    .replace(/[_\-./]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Procura no objeto a primeira chave cujo nome normalizado bate com algum alias. */
+function pickField(row: Record<string, unknown>, aliases: string[]): unknown {
+  const normalizedAliases = aliases.map(normalizeKey);
+  for (const key of Object.keys(row)) {
+    const nk = normalizeKey(key);
+    if (normalizedAliases.includes(nk)) return row[key];
+  }
+  return undefined;
+}
+
+const FIELD_ALIASES = {
+  date: ["data", "date", "dia", "day", "inicio dos relatorios", "data de inicio", "reporting starts", "reporting start"],
+  campaign_name: ["campanha", "nome da campanha", "campaign name", "campaign"],
+  platform: ["plataforma", "platform", "veiculacao", "placement"],
+  investment: ["investimento", "valor usado", "valor gasto", "gasto", "custo", "amount spent", "spend", "cost"],
+  leads: ["leads", "resultados", "results", "conversoes", "conversions"],
+  revenue: [
+    "faturamento",
+    "receita",
+    "valor de conversao",
+    "valor de conversao das compras",
+    "purchase conversion value",
+    "purchases conversion value",
+    "revenue",
+  ],
+} as const;
+
+/** Converte vários formatos de data para ISO yyyy-mm-dd. Retorna "" se inválido. */
+function parseDateToISO(value: unknown): string {
+  if (value === null || value === undefined || value === "") return "";
+
+  // Excel serial number
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const parsed = XLSX.SSF.parse_date_code(value);
+    if (parsed) {
+      const m = String(parsed.m).padStart(2, "0");
+      const d = String(parsed.d).padStart(2, "0");
+      return `${parsed.y}-${m}-${d}`;
+    }
+    return "";
+  }
+
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toISOString().slice(0, 10);
+  }
+
+  const s = String(value).trim();
+  if (!s) return "";
+
+  // Já em ISO yyyy-mm-dd
+  const iso = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (iso) return `${iso[1]}-${iso[2].padStart(2, "0")}-${iso[3].padStart(2, "0")}`;
+
+  // BR: dd/mm/yyyy ou dd-mm-yyyy
+  const br = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+  if (br) {
+    let [, d, m, y] = br;
+    if (y.length === 2) y = `20${y}`;
+    return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+  }
+
+  // Fallback: Date.parse
+  const t = Date.parse(s);
+  if (!Number.isNaN(t)) return new Date(t).toISOString().slice(0, 10);
+  return "";
+}
+
+/** Lê arquivo CSV ou Excel e devolve array de objetos (linhas). */
+async function readSpreadsheet(file: File): Promise<Record<string, unknown>[]> {
+  const name = file.name.toLowerCase();
+  const isExcel = name.endsWith(".xlsx") || name.endsWith(".xls");
+
+  if (isExcel) {
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: "array", cellDates: true });
+    const firstSheet = wb.Sheets[wb.SheetNames[0]];
+    return XLSX.utils.sheet_to_json<Record<string, unknown>>(firstSheet, {
+      defval: "",
+      raw: true,
+    });
+  }
+
+  // CSV via Papa Parse
+  return new Promise((resolve, reject) => {
+    Papa.parse<Record<string, unknown>>(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: (res) => resolve(res.data),
+      error: (err) => reject(err),
+    });
+  });
 }
 
 export const Route = createFileRoute("/admin")({
