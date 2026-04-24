@@ -143,11 +143,14 @@ function DashboardPage() {
 
   const totals = useMemo(() => {
     const investment = filtered.reduce((s, c) => s + Number(c.investment), 0);
-    const leads = filtered.reduce((s, c) => s + c.leads, 0);
+    const leads = filtered.reduce((s, c) => s + Number(c.leads), 0);
     const revenue = filtered.reduce((s, c) => s + Number(c.revenue), 0);
-    const roi = investment > 0 ? ((revenue - investment) / investment) * 100 : 0;
+    const impressions = filtered.reduce((s, c) => s + Number(c.impressions ?? 0), 0);
+    const reach = filtered.reduce((s, c) => s + Number(c.reach ?? 0), 0);
+    const views = filtered.reduce((s, c) => s + Number(c.views ?? 0), 0);
+    const clicks = filtered.reduce((s, c) => s + Number(c.clicks ?? 0), 0);
     const cpl = leads > 0 ? investment / leads : 0;
-    return { investment, leads, revenue, roi, cpl };
+    return { investment, leads, revenue, impressions, reach, views, clicks, cpl };
   }, [filtered]);
 
   const chartData = useMemo(() => {
@@ -156,7 +159,7 @@ function DashboardPage() {
       const d = c.date;
       const existing = map.get(d) ?? { date: d, investment: 0, leads: 0, revenue: 0 };
       existing.investment += Number(c.investment);
-      existing.leads += c.leads;
+      existing.leads += Number(c.leads);
       existing.revenue += Number(c.revenue);
       map.set(d, existing);
     });
@@ -169,13 +172,27 @@ function DashboardPage() {
   }, [filtered]);
 
   const campaignSummary = useMemo(() => {
-    const map = new Map<string, { name: string; investment: number; leads: number; revenue: number }>();
+    type Row = {
+      name: string;
+      investment: number;
+      leads: number;
+      impressions: number;
+      reach: number;
+      views: number;
+      clicks: number;
+    };
+    const map = new Map<string, Row>();
     filtered.forEach((c) => {
       const key = c.campaign_name;
-      const ex = map.get(key) ?? { name: key, investment: 0, leads: 0, revenue: 0 };
+      const ex =
+        map.get(key) ??
+        { name: key, investment: 0, leads: 0, impressions: 0, reach: 0, views: 0, clicks: 0 };
       ex.investment += Number(c.investment);
-      ex.leads += c.leads;
-      ex.revenue += Number(c.revenue);
+      ex.leads += Number(c.leads);
+      ex.impressions += Number(c.impressions ?? 0);
+      ex.reach += Number(c.reach ?? 0);
+      ex.views += Number(c.views ?? 0);
+      ex.clicks += Number(c.clicks ?? 0);
       map.set(key, ex);
     });
     return Array.from(map.values()).sort((a, b) => b.investment - a.investment);
