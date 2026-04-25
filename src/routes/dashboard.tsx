@@ -109,7 +109,8 @@ function DashboardPage() {
     setLoading(true);
 
     let clientQuery = supabase.from("clients").select("id, company_name, manager_message");
-    if (isAdmin && search.client_id) {
+
+    if (search.client_id) {
       clientQuery = clientQuery.eq("id", search.client_id);
     } else {
       clientQuery = clientQuery.eq("user_id", user.id);
@@ -125,7 +126,10 @@ function DashboardPage() {
         .eq("client_id", clients.id)
         .order("date", { ascending: true });
       setCampaigns((camps ?? []) as Campaign[]);
+    } else {
+      setCampaigns([]);
     }
+
     setLoading(false);
   }
 
