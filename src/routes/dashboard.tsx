@@ -89,7 +89,7 @@ function DashboardPage() {
   const [client, setClient] = useState<Client | null>(null);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
-  const [period, setPeriod] = useState<"7" | "30" | "90" | "all">("30");
+  const [period, setPeriod] = useState<"7" | "30" | "90" | "all">("all");
 
   // Admin sem client_id não tem dashboard próprio — manda para o painel
   useEffect(() => {
