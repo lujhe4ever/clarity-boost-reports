@@ -99,7 +99,7 @@ function pickField(row: Record<string, unknown>, aliases: string[]): unknown {
 }
 
 const FIELD_ALIASES = {
-  date: ["data", "date", "dia", "day", "inicio dos relatorios", "data de inicio", "reporting starts", "reporting start"],
+  date: ["data", "date", "dia", "day"],
   campaign_name: ["campanha", "nome da campanha", "campaign name", "campaign"],
   platform: ["plataforma", "platform", "veiculacao", "placement"],
   investment: ["investimento", "valor usado", "valor gasto", "gasto", "custo", "amount spent", "spend", "cost"],
@@ -528,7 +528,7 @@ function ManageClientDialog({
 
       if (records.length === 0) {
         toast.error(
-          "Nenhuma linha válida encontrada. Verifique se o arquivo tem coluna de data (data, date, dia, início dos relatórios)."
+          "Nenhuma linha válida encontrada. Verifique se o arquivo tem coluna de data diária (data, date, dia ou day)."
         );
         setImporting(false);
         return;
