@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Loader2, BarChart3 } from "lucide-react";
+import { canManageClients, resolveHighestRole } from "@/lib/roles";
 
 export const Route = createFileRoute("/login")({
   head: () => ({
@@ -26,7 +27,7 @@ function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
 
   if (!loading && user) {
-    return <Navigate to={role === "admin" ? "/admin" : "/dashboard"} />;
+    return <Navigate to={canManageClients(role) ? "/admin" : "/dashboard"} />;
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -41,12 +42,15 @@ function LoginPage() {
     // Get role to redirect
     const { data: userData } = await supabase.auth.getUser();
     if (userData.user) {
-      const { data: roleData } = await supabase
+      const { data: roleRows } = await supabase
         .from("user_roles")
         .select("role")
-        .eq("user_id", userData.user.id)
-        .maybeSingle();
-      navigate({ to: roleData?.role === "admin" ? "/admin" : "/dashboard" });
+        .eq("user_id", userData.user.id);
+      navigate({
+        to: canManageClients(resolveHighestRole((roleRows ?? []).map((row) => row.role)))
+          ? "/admin"
+          : "/dashboard",
+      });
     }
   }
 

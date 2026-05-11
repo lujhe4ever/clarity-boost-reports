@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { Navigate } from "@tanstack/react-router";
 import { Loader2 } from "lucide-react";
@@ -6,10 +7,10 @@ export function AuthGuard({
   children,
   requireAdmin = false,
 }: {
-  children: React.ReactNode;
+  children: ReactNode;
   requireAdmin?: boolean;
 }) {
-  const { user, role, loading } = useAuth();
+  const { user, canManageClients, loading } = useAuth();
 
   if (loading) {
     return (
@@ -20,7 +21,7 @@ export function AuthGuard({
   }
 
   if (!user) return <Navigate to="/login" />;
-  if (requireAdmin && role !== "admin") return <Navigate to="/dashboard" />;
+  if (requireAdmin && !canManageClients) return <Navigate to="/dashboard" />;
 
   return <>{children}</>;
 }
