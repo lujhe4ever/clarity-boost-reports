@@ -1,11 +1,27 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import Papa from "papaparse";
+import * as XLSX from "xlsx";
+import { toast } from "sonner";
+import {
+  BarChart3,
+  Building2,
+  ExternalLink,
+  Loader2,
+  LogOut,
+  MessageSquare,
+  Palette,
+  Plus,
+  Shield,
+  Trash2,
+  Upload,
+  UserPlus,
+} from "lucide-react";
+
 import { AuthGuard } from "@/components/AuthGuard";
-import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -26,28 +42,22 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { toast } from "sonner";
+import { Textarea } from "@/components/ui/textarea";
 import {
-  BarChart3,
-  LogOut,
-  Plus,
-  Trash2,
-  Upload,
-  ExternalLink,
-  Building2,
-  Loader2,
-  MessageSquare,
-} from "lucide-react";
-import Papa from "papaparse";
-import * as XLSX from "xlsx";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
+import { getRoleLabel, isMasterAdmin as checkMasterAdmin } from "@/lib/roles";
 
-/**
- * Faz parse de números em formato BR (1.234,56), US (1234.56) ou misto.
- * Remove R$, %, espaços, NBSP e aspas. Retorna 0 para inválidos.
- */
 function parseNumberBR(value: unknown): number {
   if (value === null || value === undefined) return 0;
   if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+
   let s = String(value).trim();
   if (!s) return 0;
 
@@ -76,7 +86,6 @@ function parseNumberBR(value: unknown): number {
   return negative ? -n : n;
 }
 
-/** Normaliza nome de coluna: lowercase, sem acento, sem parênteses/unidades, sem espaços extras. */
 function normalizeKey(k: string): string {
   return k
     .toLowerCase()
@@ -88,21 +97,51 @@ function normalizeKey(k: string): string {
     .trim();
 }
 
-/** Procura no objeto a primeira chave cujo nome normalizado bate com algum alias. */
 function pickField(row: Record<string, unknown>, aliases: string[]): unknown {
   const normalizedAliases = aliases.map(normalizeKey);
   for (const key of Object.keys(row)) {
-    const nk = normalizeKey(key);
-    if (normalizedAliases.includes(nk)) return row[key];
+    const normalizedKey = normalizeKey(key);
+    if (normalizedAliases.includes(normalizedKey)) {
+      return row[key];
+    }
   }
   return undefined;
 }
 
 const FIELD_ALIASES = {
   date: ["data", "date", "dia", "day"],
-  campaign_name: ["campanha", "nome da campanha", "campaign name", "campaign"],
-  platform: ["plataforma", "platform", "veiculacao", "placement"],
-  investment: ["investimento", "valor usado", "valor gasto", "gasto", "custo", "amount spent", "spend", "cost"],
+  report_start: ["inicio dos relatorios", "reporting starts", "data inicial do relatorio"],
+  report_end: ["encerramento dos relatorios", "reporting ends", "data final do relatorio"],
+  campaign_name: [
+    "campanha",
+    "nome da campanha",
+    "campaign name",
+    "campaign",
+    "conjunto de anuncios",
+    "nome do conjunto de anuncios",
+    "ad set name",
+    "ad set",
+    "nome do anuncio",
+    "ad name",
+  ],
+  platform: [
+    "plataforma",
+    "platform",
+    "veiculacao",
+    "veiculacao do conjunto de anuncios",
+    "placement",
+    "origem",
+  ],
+  investment: [
+    "investimento",
+    "valor usado",
+    "valor gasto",
+    "gasto",
+    "custo",
+    "amount spent",
+    "spend",
+    "cost",
+  ],
   leads: ["leads", "resultados", "results", "conversoes", "conversions"],
   revenue: [
     "faturamento",
@@ -127,11 +166,88 @@ const FIELD_ALIASES = {
   clicks: ["cliques", "cliques no link", "clicks", "link clicks", "cliques todos", "all clicks"],
 } as const;
 
-/** Converte vários formatos de data para ISO yyyy-mm-dd. Retorna "" se inválido. */
+const HEADER_CANDIDATE_ALIASES = [
+  ...FIELD_ALIASES.date,
+  ...FIELD_ALIASES.report_start,
+  ...FIELD_ALIASES.report_end,
+  ...FIELD_ALIASES.campaign_name,
+  ...FIELD_ALIASES.platform,
+  ...FIELD_ALIASES.investment,
+  ...FIELD_ALIASES.leads,
+  ...FIELD_ALIASES.revenue,
+  ...FIELD_ALIASES.impressions,
+  ...FIELD_ALIASES.reach,
+  ...FIELD_ALIASES.views,
+  ...FIELD_ALIASES.clicks,
+];
+
+const HEADER_DATE_ALIASES = [
+  ...FIELD_ALIASES.date,
+  ...FIELD_ALIASES.report_start,
+  ...FIELD_ALIASES.report_end,
+];
+
+const HEADER_METRIC_ALIASES = [
+  ...FIELD_ALIASES.campaign_name,
+  ...FIELD_ALIASES.platform,
+  ...FIELD_ALIASES.investment,
+  ...FIELD_ALIASES.leads,
+  ...FIELD_ALIASES.revenue,
+  ...FIELD_ALIASES.impressions,
+  ...FIELD_ALIASES.reach,
+  ...FIELD_ALIASES.views,
+  ...FIELD_ALIASES.clicks,
+];
+
+function countHeaderMatches(cells: string[], aliases: string[]) {
+  const normalizedAliases = new Set(aliases.map(normalizeKey));
+  return cells.filter((cell) => normalizedAliases.has(cell)).length;
+}
+
+function findHeaderRowIndex(rows: unknown[][]) {
+  for (let index = 0; index < rows.length; index += 1) {
+    const normalizedCells = rows[index]
+      .map((cell) => normalizeKey(String(cell ?? "")))
+      .filter(Boolean);
+
+    if (normalizedCells.length === 0) continue;
+
+    const totalMatches = countHeaderMatches(normalizedCells, HEADER_CANDIDATE_ALIASES);
+    const dateMatches = countHeaderMatches(normalizedCells, HEADER_DATE_ALIASES);
+    const metricMatches = countHeaderMatches(normalizedCells, HEADER_METRIC_ALIASES);
+
+    if (dateMatches >= 1 && metricMatches >= 1 && totalMatches >= 3) {
+      return index;
+    }
+  }
+
+  return rows.length > 0 ? 0 : -1;
+}
+
+function rowsToObjects(rows: unknown[][]): Record<string, unknown>[] {
+  const headerRowIndex = findHeaderRowIndex(rows);
+  if (headerRowIndex < 0) return [];
+
+  const headers = rows[headerRowIndex].map((cell, index) => {
+    const text = String(cell ?? "").trim();
+    return text || `coluna_${index + 1}`;
+  });
+
+  return rows
+    .slice(headerRowIndex + 1)
+    .filter((row) => row.some((cell) => String(cell ?? "").trim() !== ""))
+    .map((row) => {
+      const record: Record<string, unknown> = {};
+      headers.forEach((header, index) => {
+        record[header] = row[index] ?? "";
+      });
+      return record;
+    });
+}
+
 function parseDateToISO(value: unknown): string {
   if (value === null || value === undefined || value === "") return "";
 
-  // Excel serial number
   if (typeof value === "number" && Number.isFinite(value)) {
     const parsed = XLSX.SSF.parse_date_code(value);
     if (parsed) {
@@ -149,53 +265,108 @@ function parseDateToISO(value: unknown): string {
   const s = String(value).trim();
   if (!s) return "";
 
-  // Já em ISO yyyy-mm-dd
   const iso = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
-  if (iso) return `${iso[1]}-${iso[2].padStart(2, "0")}-${iso[3].padStart(2, "0")}`;
+  if (iso) {
+    return `${iso[1]}-${iso[2].padStart(2, "0")}-${iso[3].padStart(2, "0")}`;
+  }
 
-  // BR: dd/mm/yyyy ou dd-mm-yyyy
-  const br = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+  const br = s.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})/);
   if (br) {
-    let [, d, m, y] = br;
+    const [, d, m, yearRaw] = br;
+    let y = yearRaw;
     if (y.length === 2) y = `20${y}`;
     return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
   }
 
-  // Fallback: Date.parse
-  const t = Date.parse(s);
-  if (!Number.isNaN(t)) return new Date(t).toISOString().slice(0, 10);
+  const parsedDate = Date.parse(s);
+  if (!Number.isNaN(parsedDate)) {
+    return new Date(parsedDate).toISOString().slice(0, 10);
+  }
+
   return "";
 }
 
-/** Lê arquivo CSV ou Excel e devolve array de objetos (linhas). */
+function extractDateFromRow(row: Record<string, unknown>) {
+  const directDate = parseDateToISO(pickField(row, [...FIELD_ALIASES.date]));
+  if (directDate) return directDate;
+
+  const reportStart = parseDateToISO(pickField(row, [...FIELD_ALIASES.report_start]));
+  const reportEnd = parseDateToISO(pickField(row, [...FIELD_ALIASES.report_end]));
+
+  if (reportStart && reportEnd && reportStart === reportEnd) {
+    return reportStart;
+  }
+
+  return "";
+}
+
+function analyzeDateColumns(rows: Record<string, unknown>[]) {
+  let directDailyDates = 0;
+  let singleDayRanges = 0;
+  let multiDayRanges = 0;
+  let sampleRange = "";
+
+  for (const row of rows) {
+    const directDate = parseDateToISO(pickField(row, [...FIELD_ALIASES.date]));
+    if (directDate) {
+      directDailyDates += 1;
+      continue;
+    }
+
+    const reportStart = parseDateToISO(pickField(row, [...FIELD_ALIASES.report_start]));
+    const reportEnd = parseDateToISO(pickField(row, [...FIELD_ALIASES.report_end]));
+
+    if (reportStart && reportEnd) {
+      if (reportStart === reportEnd) {
+        singleDayRanges += 1;
+      } else {
+        multiDayRanges += 1;
+        if (!sampleRange) {
+          sampleRange = `${reportStart} ate ${reportEnd}`;
+        }
+      }
+    }
+  }
+
+  return {
+    directDailyDates,
+    singleDayRanges,
+    multiDayRanges,
+    sampleRange,
+  };
+}
+
 async function readSpreadsheet(file: File): Promise<Record<string, unknown>[]> {
   const name = file.name.toLowerCase();
   const isExcel = name.endsWith(".xlsx") || name.endsWith(".xls");
 
   if (isExcel) {
     const buf = await file.arrayBuffer();
-    const wb = XLSX.read(buf, { type: "array", cellDates: true });
-    const firstSheet = wb.Sheets[wb.SheetNames[0]];
-    return XLSX.utils.sheet_to_json<Record<string, unknown>>(firstSheet, {
+    const workbook = XLSX.read(buf, { type: "array", cellDates: true });
+    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+
+    const rows = XLSX.utils.sheet_to_json<unknown[]>(firstSheet, {
+      header: 1,
       defval: "",
       raw: true,
     });
+
+    return rowsToObjects(rows);
   }
 
-  // CSV via Papa Parse
   return new Promise((resolve, reject) => {
-    Papa.parse<Record<string, unknown>>(file, {
-      header: true,
+    Papa.parse<unknown[]>(file, {
+      header: false,
       skipEmptyLines: true,
-      complete: (res) => resolve(res.data),
-      error: (err) => reject(err),
+      complete: (result) => resolve(rowsToObjects(result.data as unknown[][])),
+      error: (error) => reject(error),
     });
   });
 }
 
 export const Route = createFileRoute("/admin")({
   head: () => ({
-    meta: [{ title: "Painel Admin — Métrica" }],
+    meta: [{ title: "Painel Admin - Metrica" }],
   }),
   component: () => (
     <AuthGuard requireAdmin>
@@ -211,28 +382,43 @@ type Client = {
   contact_name: string | null;
   manager_message: string | null;
   notes: string | null;
+  primary_color: string;
+  secondary_color: string;
+  logo_url: string | null;
+  dashboard_message: string | null;
 };
 
 function AdminPage() {
   const navigate = useNavigate();
+  const { role, clientId, canManageClients } = useAuth();
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
 
+  const isMasterAdmin = checkMasterAdmin(role);
+
   async function loadClients() {
+    if (!canManageClients) return;
+
     setLoading(true);
-    const { data } = await supabase
-      .from("clients")
-      .select("*")
-      .order("created_at", { ascending: false });
+    let query = supabase.from("clients").select("*").order("created_at", {
+      ascending: false,
+    });
+
+    if (!isMasterAdmin && clientId) {
+      query = query.eq("id", clientId);
+    }
+
+    const { data } = await query;
     setClients(data ?? []);
     setLoading(false);
   }
 
   useEffect(() => {
     loadClients();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canManageClients, isMasterAdmin, clientId]);
 
   async function handleLogout() {
     await supabase.auth.signOut();
@@ -241,7 +427,7 @@ function AdminPage() {
 
   async function handleDelete(client: Client) {
     const { data: sess } = await supabase.auth.getSession();
-    const res = await fetch("/api/delete-client", {
+    const response = await fetch("/api/delete-client", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -249,12 +435,14 @@ function AdminPage() {
       },
       body: JSON.stringify({ client_id: client.id }),
     });
-    const json = await res.json();
-    if (!res.ok) {
-      toast.error(json.error ?? "Falha ao excluir");
+    const payload = await response.json();
+
+    if (!response.ok) {
+      toast.error(payload.error ?? "Falha ao excluir");
       return;
     }
-    toast.success("Cliente excluído");
+
+    toast.success("Cliente excluido");
     loadClients();
   }
 
@@ -268,7 +456,7 @@ function AdminPage() {
             </div>
             <div>
               <div className="text-sm font-semibold">Painel Admin</div>
-              <div className="text-xs text-muted-foreground">Métrica</div>
+              <div className="text-xs text-muted-foreground">{getRoleLabel(role)}</div>
             </div>
           </div>
           <Button variant="ghost" size="sm" onClick={handleLogout} className="gap-2">
@@ -282,22 +470,25 @@ function AdminPage() {
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Clientes</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Gerencie acessos e dashboards dos seus clientes.
+              Gerencie acessos, branding e dashboards dos seus clientes.
             </p>
           </div>
-          <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-            <DialogTrigger asChild>
-              <Button className="gap-2 glow-primary">
-                <Plus className="h-4 w-4" /> Novo cliente
-              </Button>
-            </DialogTrigger>
-            <CreateClientDialog
-              onCreated={() => {
-                setCreateOpen(false);
-                loadClients();
-              }}
-            />
-          </Dialog>
+
+          {isMasterAdmin && (
+            <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+              <DialogTrigger asChild>
+                <Button className="gap-2 glow-primary">
+                  <Plus className="h-4 w-4" /> Novo cliente
+                </Button>
+              </DialogTrigger>
+              <CreateClientDialog
+                onCreated={() => {
+                  setCreateOpen(false);
+                  loadClients();
+                }}
+              />
+            </Dialog>
+          )}
         </div>
 
         <div className="mt-8 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -306,56 +497,72 @@ function AdminPage() {
               <Loader2 className="h-6 w-6 animate-spin text-primary" />
             </div>
           )}
+
           {!loading && clients.length === 0 && (
-            <div className="col-span-full glass-card rounded-2xl p-12 text-center">
+            <div className="col-span-full rounded-2xl border border-border bg-muted/30 p-12 text-center">
               <Building2 className="mx-auto h-10 w-10 text-muted-foreground" />
               <p className="mt-4 text-sm text-muted-foreground">
-                Nenhum cliente ainda. Crie o primeiro!
+                Nenhum cliente configurado ainda.
               </p>
             </div>
           )}
-          {clients.map((c) => (
-            <div key={c.id} className="glass-card rounded-2xl p-6">
+
+          {clients.map((client) => (
+            <div key={client.id} className="glass-card rounded-2xl p-6">
               <div className="flex items-start justify-between">
-                <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <div
+                  className="flex h-11 w-11 items-center justify-center rounded-lg text-white"
+                  style={{
+                    background: `linear-gradient(135deg, ${client.primary_color}, ${client.secondary_color})`,
+                  }}
+                >
                   <Building2 className="h-5 w-5" />
                 </div>
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive">
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Excluir cliente?</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        Isto removerá {c.company_name}, seu login e todas as campanhas. Não pode ser desfeito.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                      <AlertDialogAction onClick={() => handleDelete(c)}>
-                        Excluir
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
+
+                {isMasterAdmin && (
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Excluir cliente?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          Isso remove o cliente, os usuarios vinculados e as campanhas importadas.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                        <AlertDialogAction onClick={() => handleDelete(client)}>
+                          Excluir
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                )}
               </div>
-              <h3 className="mt-4 text-lg font-semibold">{c.company_name}</h3>
-              {c.contact_name && (
-                <p className="text-sm text-muted-foreground">{c.contact_name}</p>
-              )}
+
+              <h3 className="mt-4 text-lg font-semibold">{client.company_name}</h3>
+              <p className="text-sm text-muted-foreground">
+                {client.contact_name || "Sem contato principal"}
+              </p>
+
               <div className="mt-4 flex gap-2">
                 <Button
                   variant="secondary"
                   size="sm"
                   className="flex-1 gap-2"
-                  onClick={() => setSelectedClient(c)}
+                  onClick={() => setSelectedClient(client)}
                 >
                   <Upload className="h-3.5 w-3.5" /> Gerenciar
                 </Button>
-                <Link to="/dashboard" search={{ client_id: c.id }}>
+                <Link to="/dashboard" search={{ client_id: client.id }}>
                   <Button variant="ghost" size="sm" className="gap-2">
                     <ExternalLink className="h-3.5 w-3.5" /> Ver
                   </Button>
@@ -386,78 +593,137 @@ function CreateClientDialog({ onCreated }: { onCreated: () => void }) {
     contact_name: "",
     email: "",
     password: "",
+    primary_color: "#0f766e",
+    secondary_color: "#0891b2",
+    logo_url: "",
+    dashboard_message: "",
   });
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
+
     const { data: sess } = await supabase.auth.getSession();
-    const res = await fetch("/api/create-client", {
+    const response = await fetch("/api/create-client", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${sess.session?.access_token}`,
       },
-      body: JSON.stringify(form),
+      body: JSON.stringify({ ...form, mode: "create_client" }),
     });
-    const json = await res.json();
+    const payload = await response.json();
     setSubmitting(false);
-    if (!res.ok) {
-      toast.error(json.error ?? "Falha ao criar cliente");
+
+    if (!response.ok) {
+      toast.error(payload.error ?? "Falha ao criar cliente");
       return;
     }
-    toast.success("Cliente criado!");
+
+    toast.success("Cliente criado com sucesso");
     onCreated();
   }
 
   return (
-    <DialogContent>
+    <DialogContent className="max-w-2xl">
       <DialogHeader>
         <DialogTitle>Novo cliente</DialogTitle>
         <DialogDescription>
-          Crie a empresa e o login de acesso. O cliente verá apenas o próprio dashboard.
+          Crie o cliente, o branding inicial e o primeiro acesso de administracao do cliente.
         </DialogDescription>
       </DialogHeader>
-      <form onSubmit={handleSubmit} className="space-y-4">
+
+      <form onSubmit={handleSubmit} className="space-y-5">
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="space-y-2">
+            <Label>Nome da empresa</Label>
+            <Input
+              required
+              value={form.company_name}
+              onChange={(e) => setForm({ ...form, company_name: e.target.value })}
+              placeholder="Nome do cliente"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label>Contato principal</Label>
+            <Input
+              value={form.contact_name}
+              onChange={(e) => setForm({ ...form, contact_name: e.target.value })}
+              placeholder="Nome do responsavel"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label>Email do admin cliente</Label>
+            <Input
+              required
+              type="email"
+              value={form.email}
+              onChange={(e) => setForm({ ...form, email: e.target.value })}
+              placeholder="cliente@empresa.com"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label>Senha provisoria</Label>
+            <Input
+              required
+              type="text"
+              minLength={6}
+              value={form.password}
+              onChange={(e) => setForm({ ...form, password: e.target.value })}
+              placeholder="Minimo 6 caracteres"
+            />
+          </div>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="space-y-2">
+            <Label className="flex items-center gap-2">
+              <Palette className="h-3.5 w-3.5" /> Cor primaria
+            </Label>
+            <Input
+              type="color"
+              value={form.primary_color}
+              onChange={(e) => setForm({ ...form, primary_color: e.target.value })}
+              className="h-11"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label className="flex items-center gap-2">
+              <Palette className="h-3.5 w-3.5" /> Cor secundaria
+            </Label>
+            <Input
+              type="color"
+              value={form.secondary_color}
+              onChange={(e) => setForm({ ...form, secondary_color: e.target.value })}
+              className="h-11"
+            />
+          </div>
+        </div>
+
         <div className="space-y-2">
-          <Label>Nome da empresa</Label>
+          <Label>Logo (URL)</Label>
           <Input
-            required
-            value={form.company_name}
-            onChange={(e) => setForm({ ...form, company_name: e.target.value })}
-            placeholder="Acme Ltda"
+            value={form.logo_url}
+            onChange={(e) => setForm({ ...form, logo_url: e.target.value })}
+            placeholder="https://..."
           />
         </div>
+
         <div className="space-y-2">
-          <Label>Nome do contato (opcional)</Label>
-          <Input
-            value={form.contact_name}
-            onChange={(e) => setForm({ ...form, contact_name: e.target.value })}
-            placeholder="João Silva"
+          <Label>Mensagem do dashboard</Label>
+          <Textarea
+            value={form.dashboard_message}
+            onChange={(e) => setForm({ ...form, dashboard_message: e.target.value })}
+            placeholder="Mensagem exibida no dashboard do cliente"
+            rows={3}
           />
         </div>
-        <div className="space-y-2">
-          <Label>Email de acesso</Label>
-          <Input
-            required
-            type="email"
-            value={form.email}
-            onChange={(e) => setForm({ ...form, email: e.target.value })}
-            placeholder="cliente@empresa.com"
-          />
-        </div>
-        <div className="space-y-2">
-          <Label>Senha provisória</Label>
-          <Input
-            required
-            type="text"
-            minLength={6}
-            value={form.password}
-            onChange={(e) => setForm({ ...form, password: e.target.value })}
-            placeholder="Mínimo 6 caracteres"
-          />
-        </div>
+
         <DialogFooter>
           <Button type="submit" disabled={submitting} className="w-full">
             {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Criar cliente"}
@@ -477,145 +743,349 @@ function ManageClientDialog({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const { role } = useAuth();
+  const isMasterAdmin = checkMasterAdmin(role);
+
   const [message, setMessage] = useState(client.manager_message ?? "");
   const [notes, setNotes] = useState(client.notes ?? "");
+  const [primaryColor, setPrimaryColor] = useState(client.primary_color);
+  const [secondaryColor, setSecondaryColor] = useState(client.secondary_color);
+  const [logoUrl, setLogoUrl] = useState(client.logo_url ?? "");
+  const [dashboardMessage, setDashboardMessage] = useState(client.dashboard_message ?? "");
   const [saving, setSaving] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [creatingUser, setCreatingUser] = useState(false);
+  const [userForm, setUserForm] = useState({
+    display_name: "",
+    email: "",
+    password: "",
+    role: "user",
+  });
 
   async function handleSave() {
     setSaving(true);
     const { error } = await supabase
       .from("clients")
-      .update({ manager_message: message, notes })
+      .update({
+        manager_message: message,
+        notes,
+        primary_color: primaryColor,
+        secondary_color: secondaryColor,
+        logo_url: logoUrl || null,
+        dashboard_message: dashboardMessage || null,
+      })
       .eq("id", client.id);
     setSaving(false);
-    if (error) return toast.error(error.message);
-    toast.success("Salvo!");
+
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+
+    toast.success("Configuracoes salvas");
     onSaved();
+  }
+
+  async function handleCreateUser(e: React.FormEvent) {
+    e.preventDefault();
+    setCreatingUser(true);
+
+    const { data: sess } = await supabase.auth.getSession();
+    const response = await fetch("/api/create-client", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${sess.session?.access_token}`,
+      },
+      body: JSON.stringify({
+        mode: "create_user",
+        client_id: client.id,
+        ...userForm,
+        role: isMasterAdmin ? userForm.role : "user",
+      }),
+    });
+    const payload = await response.json();
+    setCreatingUser(false);
+
+    if (!response.ok) {
+      toast.error(payload.error ?? "Falha ao criar usuario");
+      return;
+    }
+
+    toast.success("Usuario criado com sucesso");
+    setUserForm({
+      display_name: "",
+      email: "",
+      password: "",
+      role: "user",
+    });
   }
 
   async function handleCSV(file: File) {
     setImporting(true);
+
     try {
       const rows = await readSpreadsheet(file);
       const totalRows = rows.length;
+      const dateAnalysis = analyzeDateColumns(rows);
 
       const records = rows
-        .map((r) => {
-          const rawDate = pickField(r, [...FIELD_ALIASES.date]);
-          const date = parseDateToISO(rawDate);
-          const platformVal = pickField(r, [...FIELD_ALIASES.platform]);
-          const campaignVal = pickField(r, [...FIELD_ALIASES.campaign_name]);
+        .map((row) => {
+          const date = extractDateFromRow(row);
+          const platformVal = pickField(row, [...FIELD_ALIASES.platform]);
+          const campaignVal = pickField(row, [...FIELD_ALIASES.campaign_name]);
+
           return {
             client_id: client.id,
             date,
             platform: (platformVal ? String(platformVal).trim() : "") || "Meta Ads",
             campaign_name: (campaignVal ? String(campaignVal).trim() : "") || "Sem nome",
-            investment: parseNumberBR(pickField(r, [...FIELD_ALIASES.investment])),
-            leads: Math.round(parseNumberBR(pickField(r, [...FIELD_ALIASES.leads]))),
-            revenue: parseNumberBR(pickField(r, [...FIELD_ALIASES.revenue])),
-            impressions: Math.round(parseNumberBR(pickField(r, [...FIELD_ALIASES.impressions]))),
-            reach: Math.round(parseNumberBR(pickField(r, [...FIELD_ALIASES.reach]))),
-            views: Math.round(parseNumberBR(pickField(r, [...FIELD_ALIASES.views]))),
-            clicks: Math.round(parseNumberBR(pickField(r, [...FIELD_ALIASES.clicks]))),
+            investment: parseNumberBR(pickField(row, [...FIELD_ALIASES.investment])),
+            leads: Math.round(parseNumberBR(pickField(row, [...FIELD_ALIASES.leads]))),
+            revenue: parseNumberBR(pickField(row, [...FIELD_ALIASES.revenue])),
+            impressions: Math.round(parseNumberBR(pickField(row, [...FIELD_ALIASES.impressions]))),
+            reach: Math.round(parseNumberBR(pickField(row, [...FIELD_ALIASES.reach]))),
+            views: Math.round(parseNumberBR(pickField(row, [...FIELD_ALIASES.views]))),
+            clicks: Math.round(parseNumberBR(pickField(row, [...FIELD_ALIASES.clicks]))),
           };
         })
-        .filter((r) => r.date);
+        .filter((record) => record.date);
 
       const ignored = totalRows - records.length;
-      console.log("[Import] Colunas detectadas:", rows[0] ? Object.keys(rows[0]) : []);
-      console.log("[Import] Amostra parseada:", records.slice(0, 3));
 
       if (records.length === 0) {
-        toast.error(
-          "Nenhuma linha válida encontrada. Verifique se o arquivo tem coluna de data diária (data, date, dia ou day)."
-        );
+        if (dateAnalysis.multiDayRanges > 0) {
+          toast.error(
+            `Esse arquivo veio consolidado por periodo (${dateAnalysis.sampleRange || "intervalo maior que um dia"}). Exporte do Meta com detalhamento por tempo em Dia para usar no dashboard diario.`,
+          );
+        } else {
+          toast.error(
+            "Nenhuma linha valida encontrada. Verifique se o arquivo tem uma coluna diaria ou uma linha com inicio e fim do relatorio no mesmo dia.",
+          );
+        }
         setImporting(false);
         return;
       }
 
       const { error } = await supabase.from("campaigns").insert(records);
       setImporting(false);
-      if (error) return toast.error(error.message);
+
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+
       toast.success(
-        `${records.length} campanhas importadas!${ignored > 0 ? ` (${ignored} ignoradas sem data)` : ""}`
+        `${records.length} linhas importadas${ignored > 0 ? ` (${ignored} ignoradas)` : ""}.`,
       );
-    } catch (e: any) {
+    } catch (error: unknown) {
       setImporting(false);
-      toast.error("Erro ao processar arquivo: " + (e?.message ?? String(e)));
+      toast.error(
+        `Erro ao processar arquivo: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 
   async function handleClearCampaigns() {
     const { error } = await supabase.from("campaigns").delete().eq("client_id", client.id);
-    if (error) return toast.error(error.message);
+
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+
     toast.success("Campanhas removidas");
   }
 
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-3xl">
         <DialogHeader>
           <DialogTitle>{client.company_name}</DialogTitle>
           <DialogDescription>
-            Atualize a mensagem do gestor, observações e importe campanhas via CSV ou Excel.
+            Atualize branding, recados, usuarios e importacoes deste cliente.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label className="flex items-center gap-2">
-              <MessageSquare className="h-3.5 w-3.5" /> Recado para o cliente
-            </Label>
-            <Textarea
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              placeholder="Resumo do mês, próximos passos..."
-              rows={3}
-            />
-          </div>
+        <div className="space-y-6">
+          <div className="grid gap-6 lg:grid-cols-2">
+            <div className="space-y-4 rounded-xl border border-border bg-muted/20 p-4">
+              <div className="space-y-2">
+                <Label className="flex items-center gap-2">
+                  <MessageSquare className="h-3.5 w-3.5" /> Recado interno
+                </Label>
+                <Textarea
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  placeholder="Resumo do mes, pendencias e proximos passos"
+                  rows={3}
+                />
+              </div>
 
-          <div className="space-y-2">
-            <Label>Observações internas</Label>
-            <Textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Notas que apenas você vê"
-              rows={2}
-            />
+              <div className="space-y-2">
+                <Label>Observacoes internas</Label>
+                <Textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Notas da operacao"
+                  rows={3}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-4 rounded-xl border border-border bg-muted/20 p-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-2">
+                    <Palette className="h-3.5 w-3.5" /> Cor primaria
+                  </Label>
+                  <Input
+                    type="color"
+                    value={primaryColor}
+                    onChange={(e) => setPrimaryColor(e.target.value)}
+                    className="h-11"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-2">
+                    <Palette className="h-3.5 w-3.5" /> Cor secundaria
+                  </Label>
+                  <Input
+                    type="color"
+                    value={secondaryColor}
+                    onChange={(e) => setSecondaryColor(e.target.value)}
+                    className="h-11"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Logo (URL)</Label>
+                <Input
+                  value={logoUrl}
+                  onChange={(e) => setLogoUrl(e.target.value)}
+                  placeholder="https://..."
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Mensagem do dashboard</Label>
+                <Textarea
+                  value={dashboardMessage}
+                  onChange={(e) => setDashboardMessage(e.target.value)}
+                  placeholder="Mensagem exibida para o cliente no dashboard"
+                  rows={3}
+                />
+              </div>
+            </div>
           </div>
 
           <Button onClick={handleSave} disabled={saving} className="w-full">
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Salvar alterações"}
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Salvar alteracoes"}
           </Button>
 
-          <div className="rounded-lg border border-border bg-muted/30 p-4">
-            <div className="flex items-center gap-2 text-sm font-medium">
-              <Upload className="h-4 w-4 text-primary" /> Importar campanhas (CSV ou Excel)
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Aceita <span className="font-mono">.csv</span>, <span className="font-mono">.xlsx</span> e{" "}
-              <span className="font-mono">.xls</span> exportados do Meta Ads. Detectamos automaticamente:
-              data, campanha, valor usado, resultados e valor de conversão.
-            </p>
-            <input
-              type="file"
-              accept=".csv,.xlsx,.xls,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-              className="mt-3 block w-full text-xs file:mr-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-primary-foreground"
-              disabled={importing}
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) handleCSV(f);
-                e.target.value = "";
-              }}
-            />
-            <button
-              type="button"
-              onClick={handleClearCampaigns}
-              className="mt-2 text-xs text-destructive hover:underline"
+          <div className="grid gap-6 lg:grid-cols-2">
+            <form
+              onSubmit={handleCreateUser}
+              className="space-y-4 rounded-xl border border-border bg-muted/20 p-4"
             >
-              Limpar todas as campanhas deste cliente
-            </button>
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <UserPlus className="h-4 w-4 text-primary" /> Criar acesso
+              </div>
+
+              <div className="space-y-2">
+                <Label>Nome</Label>
+                <Input
+                  required
+                  value={userForm.display_name}
+                  onChange={(e) => setUserForm({ ...userForm, display_name: e.target.value })}
+                  placeholder="Nome do usuario"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Email</Label>
+                <Input
+                  required
+                  type="email"
+                  value={userForm.email}
+                  onChange={(e) => setUserForm({ ...userForm, email: e.target.value })}
+                  placeholder="usuario@cliente.com"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Senha provisoria</Label>
+                <Input
+                  required
+                  type="text"
+                  minLength={6}
+                  value={userForm.password}
+                  onChange={(e) => setUserForm({ ...userForm, password: e.target.value })}
+                  placeholder="Minimo 6 caracteres"
+                />
+              </div>
+
+              {isMasterAdmin ? (
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-2">
+                    <Shield className="h-3.5 w-3.5" /> Nivel de acesso
+                  </Label>
+                  <Select
+                    value={userForm.role}
+                    onValueChange={(value) => setUserForm({ ...userForm, role: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="user">User</SelectItem>
+                      <SelectItem value="admin_cliente">Admin Cliente</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : (
+                <div className="rounded-lg border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
+                  Novos acessos criados daqui entram como USER.
+                </div>
+              )}
+
+              <Button type="submit" disabled={creatingUser} className="w-full">
+                {creatingUser ? <Loader2 className="h-4 w-4 animate-spin" /> : "Criar usuario"}
+              </Button>
+            </form>
+
+            <div className="space-y-4 rounded-xl border border-border bg-muted/20 p-4">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <Upload className="h-4 w-4 text-primary" /> Importar campanhas
+              </div>
+
+              <p className="text-xs text-muted-foreground">
+                Aceita CSV, XLSX e XLS exportados do Meta Ads. O importador detecta data diaria,
+                campanha, investimento, resultados, visualizacoes e cliques.
+              </p>
+
+              <input
+                type="file"
+                accept=".csv,.xlsx,.xls,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                className="block w-full text-xs file:mr-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-primary-foreground"
+                disabled={importing}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleCSV(file);
+                  e.target.value = "";
+                }}
+              />
+
+              <button
+                type="button"
+                onClick={handleClearCampaigns}
+                className="text-xs text-destructive hover:underline"
+              >
+                Limpar campanhas deste cliente
+              </button>
+            </div>
           </div>
         </div>
       </DialogContent>

@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { createClient } from "@supabase/supabase-js";
+
+import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 export const Route = createFileRoute("/api/delete-client")({
   server: {
@@ -25,7 +26,7 @@ export const Route = createFileRoute("/api/delete-client")({
 
           const { data: isAdmin } = await supabaseAdmin.rpc("has_role", {
             _user_id: userData.user.id,
-            _role: "admin",
+            _role: "master_admin",
           });
           if (!isAdmin) {
             return Response.json({ error: "Forbidden" }, { status: 403 });
@@ -33,25 +34,33 @@ export const Route = createFileRoute("/api/delete-client")({
 
           const { client_id } = await request.json();
           if (!client_id) {
-            return Response.json({ error: "client_id obrigatório" }, { status: 400 });
+            return Response.json({ error: "client_id obrigatorio" }, { status: 400 });
           }
 
-          const { data: client } = await supabaseAdmin
-            .from("clients")
-            .select("user_id")
-            .eq("id", client_id)
-            .single();
+          const { data: clientUsers } = await supabaseAdmin
+            .from("profiles")
+            .select("id")
+            .eq("client_id", client_id);
+
+          const userIds = (clientUsers ?? []).map((profile) => profile.id);
+
+          await supabaseAdmin.from("campaigns").delete().eq("client_id", client_id);
+
+          if (userIds.length > 0) {
+            await supabaseAdmin.from("user_roles").delete().in("user_id", userIds);
+            await supabaseAdmin.from("profiles").delete().in("id", userIds);
+          }
 
           await supabaseAdmin.from("clients").delete().eq("id", client_id);
 
-          if (client?.user_id) {
-            await supabaseAdmin.auth.admin.deleteUser(client.user_id);
+          for (const userId of userIds) {
+            await supabaseAdmin.auth.admin.deleteUser(userId);
           }
 
           return Response.json({ ok: true });
-        } catch (e: any) {
+        } catch (e: unknown) {
           return Response.json(
-            { error: e?.message ?? "Erro inesperado" },
+            { error: e instanceof Error ? e.message : "Erro inesperado" },
             { status: 500 },
           );
         }
