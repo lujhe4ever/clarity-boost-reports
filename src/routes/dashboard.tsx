@@ -18,7 +18,6 @@ import {
   BarChart3,
   Loader2,
   LogOut,
-  MessageSquare,
   MousePointerClick,
   PlayCircle,
   Target,
@@ -73,7 +72,6 @@ type Campaign = {
 type Client = {
   id: string;
   company_name: string;
-  manager_message: string | null;
   dashboard_message: string | null;
   primary_color: string;
   secondary_color: string;
@@ -83,7 +81,6 @@ type Client = {
 type LegacyClient = {
   id: string;
   company_name: string;
-  manager_message: string | null;
 };
 
 export const Route = createFileRoute("/dashboard")({
@@ -147,7 +144,7 @@ function DashboardPage() {
     };
 
     const enhancedClientQuery = getClientBaseQuery(
-      "id, company_name, manager_message, dashboard_message, primary_color, secondary_color, logo_url",
+      "id, company_name, dashboard_message, primary_color, secondary_color, logo_url",
     );
 
     const { data: enhancedClientData, error: enhancedClientError } =
@@ -156,15 +153,13 @@ function DashboardPage() {
     let clientData = enhancedClientData as Client | null;
 
     if (enhancedClientError) {
-      const { data: legacyClientData } = await getClientBaseQuery(
-        "id, company_name, manager_message",
-      ).maybeSingle();
+      const { data: legacyClientData } = await getClientBaseQuery("id, company_name").maybeSingle();
 
       const legacy = legacyClientData as LegacyClient | null;
       clientData = legacy
         ? {
             ...legacy,
-            dashboard_message: legacy.manager_message,
+            dashboard_message: null,
             primary_color: "#0f766e",
             secondary_color: "#0891b2",
             logo_url: null,
@@ -372,6 +367,7 @@ function DashboardPage() {
                 <img
                   src={clientConfig.logo}
                   alt={clientConfig.name}
+                  referrerPolicy="no-referrer"
                   className="h-full w-full object-cover"
                 />
               </div>
@@ -456,20 +452,6 @@ function DashboardPage() {
           </div>
         </section>
 
-        {client.manager_message && client.manager_message !== client.dashboard_message && (
-          <div className="glass-card rounded-2xl border-l-4 border-l-primary p-5">
-            <div className="flex items-start gap-3">
-              <MessageSquare className="mt-0.5 h-5 w-5 flex-shrink-0 text-primary" />
-              <div>
-                <div className="text-xs font-medium uppercase tracking-wider text-primary">
-                  Recado do gestor
-                </div>
-                <p className="mt-1 text-sm leading-relaxed">{client.manager_message}</p>
-              </div>
-            </div>
-          </div>
-        )}
-
         <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
           <KpiCard
             label="Resultados"
@@ -488,28 +470,28 @@ function DashboardPage() {
           <KpiCard
             label="Impressoes"
             metricKey="impressions"
-            value={fmtInt(totals.impressions)}
+            value={fmtInt(totals.impressions ?? 0)}
             icon={BarChart3}
             tone="primary"
           />
           <KpiCard
             label="Alcance"
             metricKey="reach"
-            value={fmtInt(totals.reach)}
+            value={fmtInt(totals.reach ?? 0)}
             icon={Users}
             tone="primary"
           />
           <KpiCard
             label="Visualizacoes"
             metricKey="views"
-            value={fmtInt(totals.views)}
+            value={fmtInt(totals.views ?? 0)}
             icon={PlayCircle}
             tone="primary"
           />
           <KpiCard
             label="Cliques"
             metricKey="clicks"
-            value={fmtInt(totals.clicks)}
+            value={fmtInt(totals.clicks ?? 0)}
             icon={MousePointerClick}
             tone="primary"
           />

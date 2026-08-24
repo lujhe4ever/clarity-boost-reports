@@ -3,15 +3,26 @@ import { createClient } from "@supabase/supabase-js";
 
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { resolveHighestRole } from "@/lib/roles";
+import { getAuthorizationStatus } from "@/lib/serverAccess";
 
 type CallerRole = "master_admin" | "admin_cliente" | "user" | null;
 
-function isMasterAdmin(role: CallerRole) {
-  return role === "master_admin";
+const MIN_PASSWORD_LENGTH = 12;
+const MAX_PASSWORD_LENGTH = 128;
+
+function isAcceptableTemporaryPassword(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value.length >= MIN_PASSWORD_LENGTH &&
+    value.length <= MAX_PASSWORD_LENGTH &&
+    /[a-z]/.test(value) &&
+    /[A-Z]/.test(value) &&
+    /\d/.test(value)
+  );
 }
 
-function isClientAdmin(role: CallerRole) {
-  return role === "admin_cliente";
+function isMasterAdmin(role: CallerRole) {
+  return role === "master_admin";
 }
 
 export const Route = createFileRoute("/api/create-client")({
@@ -66,7 +77,7 @@ export const Route = createFileRoute("/api/create-client")({
           const mode = body.mode === "create_user" ? "create_user" : "create_client";
 
           if (mode === "create_client") {
-            if (!isMasterAdmin(callerRole)) {
+            if (getAuthorizationStatus(true, callerRole, ["master_admin"]) !== 200) {
               return Response.json({ error: "Forbidden" }, { status: 403 });
             }
 
@@ -85,9 +96,12 @@ export const Route = createFileRoute("/api/create-client")({
               return Response.json({ error: "Campos obrigatorios faltando" }, { status: 400 });
             }
 
-            if (password.length < 6) {
+            if (!isAcceptableTemporaryPassword(password)) {
               return Response.json(
-                { error: "Senha deve ter ao menos 6 caracteres" },
+                {
+                  error:
+                    "Senha deve ter entre 12 e 128 caracteres, com maiuscula, minuscula e numero",
+                },
                 { status: 400 },
               );
             }
@@ -160,7 +174,7 @@ export const Route = createFileRoute("/api/create-client")({
             return Response.json({ ok: true, client });
           }
 
-          if (!isMasterAdmin(callerRole) && !isClientAdmin(callerRole)) {
+          if (getAuthorizationStatus(true, callerRole, ["master_admin", "admin_cliente"]) !== 200) {
             return Response.json({ error: "Forbidden" }, { status: 403 });
           }
 
@@ -170,9 +184,12 @@ export const Route = createFileRoute("/api/create-client")({
             return Response.json({ error: "Campos obrigatorios faltando" }, { status: 400 });
           }
 
-          if (password.length < 6) {
+          if (!isAcceptableTemporaryPassword(password)) {
             return Response.json(
-              { error: "Senha deve ter ao menos 6 caracteres" },
+              {
+                error:
+                  "Senha deve ter entre 12 e 128 caracteres, com maiuscula, minuscula e numero",
+              },
               { status: 400 },
             );
           }

@@ -1,29 +1,8 @@
 import type { InsightMetrics } from "@/utils/insightsEngine";
+import { supabase } from "@/integrations/supabase/client";
+import type { AISummaryInput } from "@/services/aiSummaryPrompt";
 
-export type AISummaryInput = {
-  clientName: string;
-  periodLabel: string;
-  current: InsightMetrics;
-  previous: InsightMetrics;
-  insights: string[];
-  hasPreviousPeriod?: boolean;
-};
-
-export function buildSummaryPrompt(data: AISummaryInput) {
-  return [
-    "Resuma o desempenho de marketing em ate 3 frases curtas.",
-    `Cliente: ${data.clientName}`,
-    `Periodo atual: ${data.periodLabel}`,
-    `Investimento: ${data.current.investment}`,
-    `Leads: ${data.current.leads}`,
-    `CPL: ${data.current.cpl}`,
-    `Ha periodo anterior comparavel: ${data.hasPreviousPeriod ? "sim" : "nao"}`,
-    `Investimento periodo anterior: ${data.previous.investment}`,
-    `Leads periodo anterior: ${data.previous.leads}`,
-    `CPL periodo anterior: ${data.previous.cpl}`,
-    `Insights ja calculados: ${data.insights.join(" | ")}`,
-  ].join("\n");
-}
+export type { AISummaryInput } from "@/services/aiSummaryPrompt";
 
 function hasMeaningfulBaseline(metrics: InsightMetrics) {
   return [
@@ -115,24 +94,22 @@ function extractSummaryFromResponse(payload: AISummaryResponse): string {
 }
 
 export async function generateAISummary(data: AISummaryInput) {
-  const endpoint = import.meta.env.VITE_AI_SUMMARY_ENDPOINT;
-  const apiKey = import.meta.env.VITE_AI_SUMMARY_API_KEY;
-
-  if (!endpoint) {
+  if (import.meta.env.VITE_AI_SUMMARY_ENABLED !== "true") {
     return generateFallbackSummary(data);
   }
 
   try {
-    const response = await fetch(endpoint, {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const accessToken = sessionData.session?.access_token;
+    if (!accessToken) return generateFallbackSummary(data);
+
+    const response = await fetch("/api/ai-summary", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+        Authorization: `Bearer ${accessToken}`,
       },
-      body: JSON.stringify({
-        prompt: buildSummaryPrompt(data),
-        data,
-      }),
+      body: JSON.stringify({ data }),
     });
 
     if (!response.ok) {

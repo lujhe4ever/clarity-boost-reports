@@ -12,7 +12,6 @@ type ClientConfigSource = {
   secondary_color?: string | null;
   logo_url?: string | null;
   dashboard_message?: string | null;
-  manager_message?: string | null;
 };
 
 export const defaultClientConfig: ClientConfig = {
@@ -31,9 +30,6 @@ export function resolveClientConfig(client?: ClientConfigSource | null): ClientC
     primaryColor: client.primary_color?.trim() || defaultClientConfig.primaryColor,
     secondaryColor: client.secondary_color?.trim() || defaultClientConfig.secondaryColor,
     logo: client.logo_url?.trim() || defaultClientConfig.logo,
-    messageDashboard:
-      client.dashboard_message?.trim() ||
-      client.manager_message?.trim() ||
-      defaultClientConfig.messageDashboard,
+    messageDashboard: client.dashboard_message?.trim() || defaultClientConfig.messageDashboard,
   };
 }

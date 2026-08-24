@@ -64,6 +64,38 @@ export type Database = {
           },
         ];
       };
+      client_internal_metadata: {
+        Row: {
+          client_id: string;
+          created_at: string;
+          manager_message: string | null;
+          notes: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          client_id: string;
+          created_at?: string;
+          manager_message?: string | null;
+          notes?: string | null;
+          updated_at?: string;
+        };
+        Update: {
+          client_id?: string;
+          created_at?: string;
+          manager_message?: string | null;
+          notes?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "client_internal_metadata_client_id_fkey";
+            columns: ["client_id"];
+            isOneToOne: true;
+            referencedRelation: "clients";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       clients: {
         Row: {
           company_name: string;
@@ -72,8 +104,6 @@ export type Database = {
           dashboard_message: string | null;
           id: string;
           logo_url: string | null;
-          manager_message: string | null;
-          notes: string | null;
           primary_color: string;
           secondary_color: string;
           updated_at: string;
@@ -86,8 +116,6 @@ export type Database = {
           dashboard_message?: string | null;
           id?: string;
           logo_url?: string | null;
-          manager_message?: string | null;
-          notes?: string | null;
           primary_color?: string;
           secondary_color?: string;
           updated_at?: string;
@@ -100,8 +128,6 @@ export type Database = {
           dashboard_message?: string | null;
           id?: string;
           logo_url?: string | null;
-          manager_message?: string | null;
-          notes?: string | null;
           primary_color?: string;
           secondary_color?: string;
           updated_at?: string;
@@ -169,10 +195,8 @@ export type Database = {
         };
         Returns: boolean;
       };
-      get_user_client_id: {
-        Args: {
-          _user_id: string;
-        };
+      get_current_user_client_id: {
+        Args: Record<PropertyKey, never>;
         Returns: string;
       };
     };

@@ -2,10 +2,8 @@
 
 ## Ambiente seguro
 
-- Copia isolada criada em:
-  - `C:\Users\Luan e Jheny\Documents\Codex\2026-04-24-estou-editando-algumas-configura-es-no\dashboard-saas-ai-test`
-- Origem da copia:
-  - `X:\DOWNLOADS\clarity-boost-reports-main.zip`
+- Copia isolada criada em um diretorio local de desenvolvimento.
+- Origem obtida do repositorio Git configurado para a aplicacao.
 - Objetivo remoto solicitado:
   - repositorio `dashboard-saas-ai-test`
   - branch `feature/ai-insights-dashboard`
@@ -112,7 +110,8 @@
 - Arquivo:
   - `src/routes/admin.tsx`
 - Melhorias:
-  - aceita CSV, XLSX e XLS
+  - aceita CSV e XLSX de ate 5 MB e 10.000 linhas
+  - rejeita XLS legado, MIME inesperado, ZIP64 e XLSX com expansao excessiva
   - tenta ler data diaria direta
   - aceita `inicio` e `fim` do relatorio apenas quando ambos forem o mesmo dia
   - parse numerico mais tolerante para valores de marketing
@@ -146,19 +145,18 @@
 
 ### Recomendacao segura
 
-Nao chame a API da OpenAI direto do browser com chave secreta. O ideal e usar um endpoint seu no servidor ou numa funcao serverless.
+Nao chame provedores de IA direto do browser com chave secreta. A aplicacao usa o endpoint autenticado `/api/ai-summary`, e qualquer credencial deve existir somente em variaveis server-side.
 
-### Variaveis esperadas no frontend
+### Variaveis esperadas
 
-- `VITE_AI_SUMMARY_ENDPOINT`
-- `VITE_AI_SUMMARY_API_KEY`
+- Frontend: `VITE_AI_SUMMARY_ENABLED`
+- Backend: `AI_SUMMARY_ENDPOINT` e `AI_SUMMARY_API_KEY`
 
 ### Fluxo recomendado
 
-1. Criar um endpoint seu, por exemplo:
-   - `/api/ai-summary`
-2. Esse endpoint recebe `prompt` e `data`.
-3. O endpoint chama a OpenAI no servidor com a chave secreta.
+1. Configurar o endpoint existente `/api/ai-summary`.
+2. O endpoint autenticado recebe apenas os dados estruturados e monta o prompt no servidor.
+3. O endpoint chama o provedor configurado no servidor com a chave secreta.
 4. O endpoint devolve algo simples como:
 
 ```json
@@ -169,11 +167,10 @@ Nao chame a API da OpenAI direto do browser com chave secreta. O ideal e usar um
 
 ### Exemplo de integracao com OpenAI no backend
 
-O frontend ja esta preparado para enviar:
+O frontend envia:
 
 ```json
 {
-  "prompt": "...",
   "data": {
     "clientName": "...",
     "periodLabel": "...",

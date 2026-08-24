@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import Papa from "papaparse";
-import * as XLSX from "xlsx";
+import { Workbook } from "exceljs";
 import { toast } from "sonner";
 import {
   BarChart3,
@@ -53,6 +53,12 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { getRoleLabel, isMasterAdmin as checkMasterAdmin } from "@/lib/roles";
+import {
+  MAX_IMPORT_ROWS,
+  assertSafeXlsxArchive,
+  validateSpreadsheetFile,
+  validateSpreadsheetRow,
+} from "@/utils/spreadsheetSecurity";
 
 function parseNumberBR(value: unknown): number {
   if (value === null || value === undefined) return 0;
@@ -249,13 +255,9 @@ function parseDateToISO(value: unknown): string {
   if (value === null || value === undefined || value === "") return "";
 
   if (typeof value === "number" && Number.isFinite(value)) {
-    const parsed = XLSX.SSF.parse_date_code(value);
-    if (parsed) {
-      const m = String(parsed.m).padStart(2, "0");
-      const d = String(parsed.d).padStart(2, "0");
-      return `${parsed.y}-${m}-${d}`;
-    }
-    return "";
+    const excelEpoch = Date.UTC(1899, 11, 30);
+    const parsed = new Date(excelEpoch + Math.floor(value) * 86_400_000);
+    return Number.isNaN(parsed.getTime()) ? "" : parsed.toISOString().slice(0, 10);
   }
 
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
@@ -336,29 +338,74 @@ function analyzeDateColumns(rows: Record<string, unknown>[]) {
   };
 }
 
+function normalizeSpreadsheetCell(value: unknown): unknown {
+  if (value === null || value === undefined) return "";
+  if (value instanceof Date || typeof value === "number" || typeof value === "string") {
+    return value;
+  }
+  if (typeof value !== "object") return String(value);
+
+  const cell = value as {
+    result?: unknown;
+    text?: unknown;
+    richText?: Array<{ text?: string }>;
+  };
+  if (cell.result !== undefined) return normalizeSpreadsheetCell(cell.result);
+  if (typeof cell.text === "string") return cell.text;
+  if (Array.isArray(cell.richText)) {
+    return cell.richText.map((part) => part.text ?? "").join("");
+  }
+  return "";
+}
+
 async function readSpreadsheet(file: File): Promise<Record<string, unknown>[]> {
-  const name = file.name.toLowerCase();
-  const isExcel = name.endsWith(".xlsx") || name.endsWith(".xls");
+  const extension = validateSpreadsheetFile(file);
 
-  if (isExcel) {
+  if (extension === ".xlsx") {
     const buf = await file.arrayBuffer();
-    const workbook = XLSX.read(buf, { type: "array", cellDates: true });
-    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+    assertSafeXlsxArchive(buf);
+    const workbook = new Workbook();
+    await workbook.xlsx.load(buf);
+    const firstSheet = workbook.worksheets[0];
+    if (!firstSheet) throw new Error("O arquivo XLSX nao contem planilhas.");
 
-    const rows = XLSX.utils.sheet_to_json<unknown[]>(firstSheet, {
-      header: 1,
-      defval: "",
-      raw: true,
+    const rows: unknown[][] = [];
+    firstSheet.eachRow({ includeEmpty: false }, (worksheetRow, rowNumber) => {
+      if (rows.length >= MAX_IMPORT_ROWS + 1) {
+        throw new Error(`O arquivo excede o limite de ${MAX_IMPORT_ROWS} linhas de dados.`);
+      }
+      const rawValues = Array.isArray(worksheetRow.values) ? worksheetRow.values.slice(1) : [];
+      const values = rawValues.map(normalizeSpreadsheetCell);
+      validateSpreadsheetRow(values, rowNumber);
+      rows.push(values);
     });
 
     return rowsToObjects(rows);
   }
 
   return new Promise((resolve, reject) => {
+    const rows: unknown[][] = [];
     Papa.parse<unknown[]>(file, {
       header: false,
       skipEmptyLines: true,
-      complete: (result) => resolve(rowsToObjects(result.data as unknown[][])),
+      step: (result, parser) => {
+        try {
+          if (rows.length >= MAX_IMPORT_ROWS + 1) {
+            parser.abort();
+            reject(new Error(`O arquivo excede o limite de ${MAX_IMPORT_ROWS} linhas de dados.`));
+            return;
+          }
+          const row = result.data as unknown[];
+          validateSpreadsheetRow(row, rows.length + 1);
+          rows.push(row);
+        } catch (error) {
+          parser.abort();
+          reject(error);
+        }
+      },
+      complete: (result) => {
+        if (!result.meta.aborted) resolve(rowsToObjects(rows));
+      },
       error: (error) => reject(error),
     });
   });
@@ -411,7 +458,31 @@ function AdminPage() {
     }
 
     const { data } = await query;
-    setClients(data ?? []);
+    const visibleClients = (data ?? []).map((client) => ({
+      ...client,
+      manager_message: null,
+      notes: null,
+    }));
+
+    if (isMasterAdmin && visibleClients.length > 0) {
+      const { data: internalRows } = await supabase
+        .from("client_internal_metadata")
+        .select("client_id, manager_message, notes")
+        .in(
+          "client_id",
+          visibleClients.map((client) => client.id),
+        );
+      const internalByClient = new Map((internalRows ?? []).map((row) => [row.client_id, row]));
+      setClients(
+        visibleClients.map((client) => ({
+          ...client,
+          manager_message: internalByClient.get(client.id)?.manager_message ?? null,
+          notes: internalByClient.get(client.id)?.notes ?? null,
+        })),
+      );
+    } else {
+      setClients(visibleClients);
+    }
     setLoading(false);
   }
 
@@ -670,11 +741,12 @@ function CreateClientDialog({ onCreated }: { onCreated: () => void }) {
             <Label>Senha provisoria</Label>
             <Input
               required
-              type="text"
-              minLength={6}
+              type="password"
+              minLength={12}
+              maxLength={128}
               value={form.password}
               onChange={(e) => setForm({ ...form, password: e.target.value })}
-              placeholder="Minimo 6 caracteres"
+              placeholder="Minimo 12 caracteres"
             />
           </div>
         </div>
@@ -764,23 +836,36 @@ function ManageClientDialog({
 
   async function handleSave() {
     setSaving(true);
-    const { error } = await supabase
+    const { error: clientError } = await supabase
       .from("clients")
       .update({
-        manager_message: message,
-        notes,
         primary_color: primaryColor,
         secondary_color: secondaryColor,
         logo_url: logoUrl || null,
         dashboard_message: dashboardMessage || null,
       })
       .eq("id", client.id);
-    setSaving(false);
 
-    if (error) {
-      toast.error(error.message);
+    if (clientError) {
+      setSaving(false);
+      toast.error(clientError.message);
       return;
     }
+
+    if (isMasterAdmin) {
+      const { error: internalError } = await supabase.from("client_internal_metadata").upsert({
+        client_id: client.id,
+        manager_message: message || null,
+        notes: notes || null,
+      });
+      if (internalError) {
+        setSaving(false);
+        toast.error(internalError.message);
+        return;
+      }
+    }
+
+    setSaving(false);
 
     toast.success("Configuracoes salvas");
     onSaved();
@@ -909,29 +994,31 @@ function ManageClientDialog({
 
         <div className="space-y-6">
           <div className="grid gap-6 lg:grid-cols-2">
-            <div className="space-y-4 rounded-xl border border-border bg-muted/20 p-4">
-              <div className="space-y-2">
-                <Label className="flex items-center gap-2">
-                  <MessageSquare className="h-3.5 w-3.5" /> Recado interno
-                </Label>
-                <Textarea
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  placeholder="Resumo do mes, pendencias e proximos passos"
-                  rows={3}
-                />
-              </div>
+            {isMasterAdmin && (
+              <div className="space-y-4 rounded-xl border border-border bg-muted/20 p-4">
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-2">
+                    <MessageSquare className="h-3.5 w-3.5" /> Recado interno
+                  </Label>
+                  <Textarea
+                    value={message}
+                    onChange={(e) => setMessage(e.target.value)}
+                    placeholder="Resumo do mes, pendencias e proximos passos"
+                    rows={3}
+                  />
+                </div>
 
-              <div className="space-y-2">
-                <Label>Observacoes internas</Label>
-                <Textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Notas da operacao"
-                  rows={3}
-                />
+                <div className="space-y-2">
+                  <Label>Observacoes internas</Label>
+                  <Textarea
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="Notas da operacao"
+                    rows={3}
+                  />
+                </div>
               </div>
-            </div>
+            )}
 
             <div className="space-y-4 rounded-xl border border-border bg-muted/20 p-4">
               <div className="grid gap-4 md:grid-cols-2">
@@ -1019,11 +1106,12 @@ function ManageClientDialog({
                 <Label>Senha provisoria</Label>
                 <Input
                   required
-                  type="text"
-                  minLength={6}
+                  type="password"
+                  minLength={12}
+                  maxLength={128}
                   value={userForm.password}
                   onChange={(e) => setUserForm({ ...userForm, password: e.target.value })}
-                  placeholder="Minimo 6 caracteres"
+                  placeholder="Minimo 12 caracteres"
                 />
               </div>
 
@@ -1062,13 +1150,14 @@ function ManageClientDialog({
               </div>
 
               <p className="text-xs text-muted-foreground">
-                Aceita CSV, XLSX e XLS exportados do Meta Ads. O importador detecta data diaria,
-                campanha, investimento, resultados, visualizacoes e cliques.
+                Aceita CSV e XLSX de ate 5 MB e 10.000 linhas. O formato XLS legado nao e aceito. O
+                importador detecta data diaria, campanha, investimento, resultados, visualizacoes e
+                cliques.
               </p>
 
               <input
                 type="file"
-                accept=".csv,.xlsx,.xls,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                accept=".csv,.xlsx,text/csv,application/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 className="block w-full text-xs file:mr-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-primary-foreground"
                 disabled={importing}
                 onChange={(e) => {
