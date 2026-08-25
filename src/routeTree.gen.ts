@@ -9,22 +9,17 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as LoginRouteImport } from './routes/login'
-import { Route as DashboardRouteImport } from './routes/dashboard'
-import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as ApiDeleteClientRouteImport } from './routes/api/delete-client'
-import { Route as ApiCreateClientRouteImport } from './routes/api/create-client'
+import { Route as AdminRouteImport } from './routes/admin'
+import { Route as DashboardRouteImport } from './routes/dashboard'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as ApiAiSummaryRouteImport } from './routes/api/ai-summary'
+import { Route as ApiCreateClientRouteImport } from './routes/api/create-client'
+import { Route as ApiDeleteClientRouteImport } from './routes/api/delete-client'
 
-const LoginRoute = LoginRouteImport.update({
-  id: '/login',
-  path: '/login',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DashboardRoute = DashboardRouteImport.update({
-  id: '/dashboard',
-  path: '/dashboard',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminRoute = AdminRouteImport.update({
@@ -32,14 +27,19 @@ const AdminRoute = AdminRouteImport.update({
   path: '/admin',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const DashboardRoute = DashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiDeleteClientRoute = ApiDeleteClientRouteImport.update({
-  id: '/api/delete-client',
-  path: '/api/delete-client',
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAiSummaryRoute = ApiAiSummaryRouteImport.update({
+  id: '/api/ai-summary',
+  path: '/api/ai-summary',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiCreateClientRoute = ApiCreateClientRouteImport.update({
@@ -47,9 +47,9 @@ const ApiCreateClientRoute = ApiCreateClientRouteImport.update({
   path: '/api/create-client',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiAiSummaryRoute = ApiAiSummaryRouteImport.update({
-  id: '/api/ai-summary',
-  path: '/api/ai-summary',
+const ApiDeleteClientRoute = ApiDeleteClientRouteImport.update({
+  id: '/api/delete-client',
+  path: '/api/delete-client',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -123,18 +123,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/login': {
-      id: '/login'
-      path: '/login'
-      fullPath: '/login'
-      preLoaderRoute: typeof LoginRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/dashboard': {
-      id: '/dashboard'
-      path: '/dashboard'
-      fullPath: '/dashboard'
-      preLoaderRoute: typeof DashboardRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin': {
@@ -144,18 +137,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/dashboard': {
+      id: '/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof DashboardRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/delete-client': {
-      id: '/api/delete-client'
-      path: '/api/delete-client'
-      fullPath: '/api/delete-client'
-      preLoaderRoute: typeof ApiDeleteClientRouteImport
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/ai-summary': {
+      id: '/api/ai-summary'
+      path: '/api/ai-summary'
+      fullPath: '/api/ai-summary'
+      preLoaderRoute: typeof ApiAiSummaryRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/create-client': {
@@ -165,11 +165,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiCreateClientRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/ai-summary': {
-      id: '/api/ai-summary'
-      path: '/api/ai-summary'
-      fullPath: '/api/ai-summary'
-      preLoaderRoute: typeof ApiAiSummaryRouteImport
+    '/api/delete-client': {
+      id: '/api/delete-client'
+      path: '/api/delete-client'
+      fullPath: '/api/delete-client'
+      preLoaderRoute: typeof ApiDeleteClientRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
