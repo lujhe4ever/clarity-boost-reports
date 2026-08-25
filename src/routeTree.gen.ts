@@ -14,6 +14,7 @@ import { Route as AdminRouteImport } from './routes/admin'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ApiAiSummaryRouteImport } from './routes/api/ai-summary'
+import { Route as ApiClientLogoRouteImport } from './routes/api/client-logo'
 import { Route as ApiCreateClientRouteImport } from './routes/api/create-client'
 import { Route as ApiDeleteClientRouteImport } from './routes/api/delete-client'
 
@@ -42,6 +43,11 @@ const ApiAiSummaryRoute = ApiAiSummaryRouteImport.update({
   path: '/api/ai-summary',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiClientLogoRoute = ApiClientLogoRouteImport.update({
+  id: '/api/client-logo',
+  path: '/api/client-logo',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiCreateClientRoute = ApiCreateClientRouteImport.update({
   id: '/api/create-client',
   path: '/api/create-client',
@@ -59,6 +65,7 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
   '/api/ai-summary': typeof ApiAiSummaryRoute
+  '/api/client-logo': typeof ApiClientLogoRoute
   '/api/create-client': typeof ApiCreateClientRoute
   '/api/delete-client': typeof ApiDeleteClientRoute
 }
@@ -68,6 +75,7 @@ export interface FileRoutesByTo {
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
   '/api/ai-summary': typeof ApiAiSummaryRoute
+  '/api/client-logo': typeof ApiClientLogoRoute
   '/api/create-client': typeof ApiCreateClientRoute
   '/api/delete-client': typeof ApiDeleteClientRoute
 }
@@ -78,6 +86,7 @@ export interface FileRoutesById {
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
   '/api/ai-summary': typeof ApiAiSummaryRoute
+  '/api/client-logo': typeof ApiClientLogoRoute
   '/api/create-client': typeof ApiCreateClientRoute
   '/api/delete-client': typeof ApiDeleteClientRoute
 }
@@ -89,6 +98,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/login'
     | '/api/ai-summary'
+    | '/api/client-logo'
     | '/api/create-client'
     | '/api/delete-client'
   fileRoutesByTo: FileRoutesByTo
@@ -98,6 +108,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/login'
     | '/api/ai-summary'
+    | '/api/client-logo'
     | '/api/create-client'
     | '/api/delete-client'
   id:
@@ -107,6 +118,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/login'
     | '/api/ai-summary'
+    | '/api/client-logo'
     | '/api/create-client'
     | '/api/delete-client'
   fileRoutesById: FileRoutesById
@@ -117,6 +129,7 @@ export interface RootRouteChildren {
   DashboardRoute: typeof DashboardRoute
   LoginRoute: typeof LoginRoute
   ApiAiSummaryRoute: typeof ApiAiSummaryRoute
+  ApiClientLogoRoute: typeof ApiClientLogoRoute
   ApiCreateClientRoute: typeof ApiCreateClientRoute
   ApiDeleteClientRoute: typeof ApiDeleteClientRoute
 }
@@ -158,6 +171,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAiSummaryRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/client-logo': {
+      id: '/api/client-logo'
+      path: '/api/client-logo'
+      fullPath: '/api/client-logo'
+      preLoaderRoute: typeof ApiClientLogoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/create-client': {
       id: '/api/create-client'
       path: '/api/create-client'
@@ -181,6 +201,7 @@ const rootRouteChildren: RootRouteChildren = {
   DashboardRoute: DashboardRoute,
   LoginRoute: LoginRoute,
   ApiAiSummaryRoute: ApiAiSummaryRoute,
+  ApiClientLogoRoute: ApiClientLogoRoute,
   ApiCreateClientRoute: ApiCreateClientRoute,
   ApiDeleteClientRoute: ApiDeleteClientRoute,
 }

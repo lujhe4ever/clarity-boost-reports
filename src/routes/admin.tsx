@@ -53,12 +53,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { getRoleLabel, isMasterAdmin as checkMasterAdmin } from "@/lib/roles";
-import {
-  CLIENT_LOGO_BUCKET,
-  buildClientLogoPath,
-  getManagedClientLogoPath,
-  validateClientLogoFile,
-} from "@/utils/clientLogo";
+import { validateClientLogoFile } from "@/utils/clientLogo";
 import {
   MAX_IMPORT_ROWS,
   assertSafeXlsxArchive,
@@ -66,25 +61,24 @@ import {
   validateSpreadsheetRow,
 } from "@/utils/spreadsheetSecurity";
 
-async function uploadClientLogo(clientId: string, file: File) {
-  validateClientLogoFile(file);
-  const path = buildClientLogoPath(clientId, file);
-  const { error } = await supabase.storage.from(CLIENT_LOGO_BUCKET).upload(path, file, {
-    cacheControl: "3600",
-    contentType: file.type,
-    upsert: false,
+async function saveClientLogo(clientId: string, file: File | null, remove = false) {
+  if (file) validateClientLogoFile(file);
+  const { data: sessionData } = await supabase.auth.getSession();
+  if (!sessionData.session?.access_token) throw new Error("Sessao expirada");
+
+  const formData = new FormData();
+  formData.set("client_id", clientId);
+  formData.set("action", remove ? "remove" : "upload");
+  if (file) formData.set("file", file);
+
+  const response = await fetch("/api/client-logo", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${sessionData.session.access_token}` },
+    body: formData,
   });
-  if (error) throw error;
-
-  const { data } = supabase.storage.from(CLIENT_LOGO_BUCKET).getPublicUrl(path);
-  return { path, url: data.publicUrl };
-}
-
-async function removeManagedClientLogo(url: string | null | undefined) {
-  const path = getManagedClientLogoPath(url);
-  if (!path) return;
-  const { error } = await supabase.storage.from(CLIENT_LOGO_BUCKET).remove([path]);
-  if (error) throw error;
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload.error ?? "Falha ao salvar logo");
+  return (payload.logo_url as string | null) ?? null;
 }
 
 function parseNumberBR(value: unknown): number {
@@ -721,15 +715,7 @@ function CreateClientDialog({ onCreated }: { onCreated: () => void }) {
 
     if (logoFile && payload.client?.id) {
       try {
-        const uploadedLogo = await uploadClientLogo(payload.client.id, logoFile);
-        const { error: logoUpdateError } = await supabase
-          .from("clients")
-          .update({ logo_url: uploadedLogo.url })
-          .eq("id", payload.client.id);
-        if (logoUpdateError) {
-          await supabase.storage.from(CLIENT_LOGO_BUCKET).remove([uploadedLogo.path]);
-          throw logoUpdateError;
-        }
+        await saveClientLogo(payload.client.id, logoFile);
       } catch (error) {
         toast.warning(
           `Cliente criado, mas a logo nao foi salva: ${error instanceof Error ? error.message : "falha no upload"}`,
@@ -897,28 +883,18 @@ function ManageClientDialog({
 
   async function handleSave() {
     setSaving(true);
-    let uploadedLogo: { path: string; url: string } | null = null;
 
     try {
-      if (logoFile) {
-        uploadedLogo = await uploadClientLogo(client.id, logoFile);
-      }
-
-      const nextLogoUrl = uploadedLogo?.url ?? (removeLogo ? null : logoUrl || null);
       const { error: clientError } = await supabase
         .from("clients")
         .update({
           primary_color: primaryColor,
           secondary_color: secondaryColor,
-          logo_url: nextLogoUrl,
           dashboard_message: dashboardMessage || null,
         })
         .eq("id", client.id);
 
       if (clientError) {
-        if (uploadedLogo) {
-          await supabase.storage.from(CLIENT_LOGO_BUCKET).remove([uploadedLogo.path]);
-        }
         throw clientError;
       }
 
@@ -933,12 +909,9 @@ function ManageClientDialog({
         }
       }
 
-      if (client.logo_url && client.logo_url !== nextLogoUrl) {
-        try {
-          await removeManagedClientLogo(client.logo_url);
-        } catch {
-          toast.warning("Configuracoes salvas, mas a logo anterior nao pode ser removida");
-        }
+      let nextLogoUrl = logoUrl || null;
+      if (logoFile || removeLogo) {
+        nextLogoUrl = await saveClientLogo(client.id, logoFile, removeLogo);
       }
 
       setLogoUrl(nextLogoUrl ?? "");
