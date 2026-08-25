@@ -1,61 +1,54 @@
-## Diagnóstico
+# Correção do schema de produção (somente banco)
 
-1. **Métricas faltantes no banco**: a tabela `campaigns` só tem `investment`, `leads`, `revenue`. Não tem `impressions`, `reach`, `views`, `clicks`. Sem armazenar essas colunas, não há como mostrá-las no dashboard.
-2. **Dashboard atual mostra 5 KPIs diferentes do pedido**: Investimento, Faturamento, ROI, Resultados, Custo por resultado.
-3. **Arredondamento que perde precisão**:
-   - `fmtBRL` usa `maximumFractionDigits: 0` → `R$ 0,95` vira `R$ 1`. Centavos somem.
-   - `Math.round(parseNumberBR(r.leads))` força inteiro nos resultados (OK para "Resultados" do Meta, que sempre vem inteiro, mas para impressões/alcance/views/cliques também é inteiro — ainda OK; só precisamos não arredondar valores monetários e percentuais).
-   - O parser `parseNumberBR` já lê corretamente `0,32%`, `1.2`, `1,25` — o problema é só na exibição.
+Nenhum arquivo da aplicação será alterado. Nenhum dado será apagado.
 
-## Plano
+## Estado atual verificado
 
-### 1. Adicionar colunas no banco (migration)
-Adicionar à tabela `campaigns` (todas com `default 0`, não-nulas, para não quebrar dados existentes):
-- `impressions` integer
-- `reach` integer
-- `views` integer (visualizações de vídeo / thruplays)
-- `clicks` integer
+- `clients` ainda tem `notes` e `manager_message` (2 registros com conteúdo) e **não tem** `dashboard_message`, `primary_color`, `secondary_color`, `logo_url`.
+- `profiles` **não tem** `client_id`.
+- `client_internal_metadata` **não existe**.
+- Enum `app_role` só tem `admin` e `client`; os papéis atuais em `user_roles` são exatamente esses.
+- Dados atuais: 2 clientes, 362 campanhas, 4 perfis — todos preservados.
 
-Mantém `investment`, `leads`, `revenue` como estão (continuam servindo "Valor usado" e cálculos existentes do banco).
+Conclusão: as duas migrations do repositório nunca foram aplicadas em produção.
 
-### 2. Importador (admin.tsx) — ler as novas métricas do Meta
-Adicionar aliases ao `FIELD_ALIASES`:
-- **impressions**: `impressões`, `impressions`
-- **reach**: `alcance`, `reach`, `pessoas alcançadas`
-- **views**: `visualizações`, `visualizações de vídeo`, `thruplays`, `reproduções de vídeo de 3 segundos`, `video views`, `3-second video views`, `thruplays`
-- **clicks**: `cliques`, `cliques no link`, `clicks`, `link clicks`, `cliques (todos)`
+## Como será aplicado
 
-Inserir os 4 campos em cada `record` do `handleCSV` usando `Math.round(parseNumberBR(...))` (são inteiros no Meta).
+Em 3 migrations idempotentes, na ordem, respeitando o conteúdo das migrations existentes:
 
-### 3. Dashboard — substituir KPIs e ajustar exibição
+**Migration 1 — valores de enum**
+Adiciona `master_admin`, `admin_cliente`, `user` ao tipo `app_role` (com guarda de existência).
+Motivo de ficar isolada: o Postgres não permite usar um valor de enum recém-criado na mesma transação em que foi adicionado — rodar o arquivo original inteiro falharia no `UPDATE user_roles SET role='master_admin'`. Só o agrupamento muda; o efeito final é idêntico ao arquivo do repositório.
 
-**KPIs (em ordem, conforme pedido)**: Resultados, Valor usado, Impressões, Alcance, Visualizações, Cliques.
+**Migration 2 — multi-tenant (`20260427110000_ai_insights_multiclient.sql`)**
+- `profiles.client_id` (FK para `clients`, `ON DELETE SET NULL`) + índice.
+- `clients`: `primary_color`, `secondary_color`, `logo_url`, `dashboard_message`.
+- Migra papéis: `admin` → `master_admin`, `client` → `user`.
+- Preenche `profiles.client_id` a partir de `clients.user_id`.
+- Copia `manager_message` para `dashboard_message`.
+- Cria `get_user_client_id()` e as policies dessa etapa.
 
-Layout em grid `grid-cols-2 md:grid-cols-3 lg:grid-cols-6`. Remove: Faturamento, ROI, Custo por resultado dos KPIs principais (CPL fica como coluna na tabela).
+**Migration 3 — hardening (`20260824230000_security_hardening.sql`)**
+- Cria `client_internal_metadata` e **copia `notes` e `manager_message` antes** de removê-los de `clients`.
+- Remove as colunas antigas de `clients` e adiciona os CHECKs de cor/logo/mensagem.
+- Remove a policy vulnerável **"Users update own profile"** (nenhuma policy de UPDATE em `profiles` para não-master: `user` e `admin_cliente` deixam de conseguir alterar `client_id`).
+- Recria todas as policies de `profiles`, `user_roles`, `clients`, `campaigns` com isolamento por tenant e `TO authenticated`.
+- Endurece `has_role` e cria `get_current_user_client_id` com `search_path` fixo, `REVOKE` de `PUBLIC`/`anon` e `GRANT` apenas para `authenticated`/`service_role`.
+- Trigger `enforce_client_update_columns` restringindo os campos que `admin_cliente` pode editar em `clients`.
+- Remove `get_user_client_id(uuid)`.
 
-**Formatação correta de números (sem arredondamento perdendo precisão)**:
-- Helper `fmtBRL(v)` aceita parâmetro de casas decimais; padrão **2 casas** (`R$ 0,95` em vez de `R$ 1`).
-- Helper novo `fmtInt(v)` para impressões/alcance/views/cliques/leads — `toLocaleString("pt-BR")` sem casas decimais (são inteiros por natureza).
-- Helper novo `fmtPct(v, dec=2)` para percentuais (CTR etc.) — `0,32%` em vez de `0%`.
-- Helper novo `fmtDec(v, dec=2)` para decimais soltos como frequência (1,25).
+**Complementos incluídos na migration 3**
+- `GRANT` explícito nas tabelas do schema `public` (`authenticated` e `service_role`; sem `anon`), já que as policies exigem privilégios de tabela.
+- `NOTIFY pgrst, 'reload schema'` ao final para recarregar o cache do PostgREST.
 
-Aplicar em **todos** os pontos: KPIs, tooltips dos gráficos e tabela. O `CustomTooltip` ganha props `format` para escolher a formatação por dataKey.
+## Validação após aplicar
 
-**Tabela "Resumo por campanha"** — colunas atualizadas na ordem pedida:
-Campanha | Resultados | Valor usado | Impressões | Alcance | Visualizações | Cliques | Custo/Resultado
+Consultas de verificação e relatório objetivo de:
+- existência de `clients.dashboard_message`;
+- existência de `client_internal_metadata` e se os 2 registros de notas/mensagens foram migrados;
+- ausência da policy "Users update own profile";
+- ausência de qualquer policy que permita `user`/`admin_cliente` fazer UPDATE em `profiles` (bloqueando `client_id`);
+- teste real, com sessão simulada, de `admin_cliente` tentando inserir campanha em outro `client_id` (deve falhar com 42501, dentro de transação revertida);
+- qualquer SQL que tenha falhado.
 
-(mantém Custo/Resultado como bônus útil — mas formatado com 2 casas).
-
-**Gráficos**: mantenho os dois atuais (Investimento ao longo do tempo e Resultados por dia). O gráfico de investimento passa a usar formatação com centavos no tooltip; mantém escala em "k" no eixo Y para legibilidade.
-
-### 4. Tipo `Campaign` no front
-Adicionar `impressions`, `reach`, `views`, `clicks` ao tipo, ao `useMemo` de totals, ao chartData e ao campaignSummary.
-
-### Arquivos
-- **Migration SQL** — adicionar 4 colunas em `campaigns`
-- `src/routes/admin.tsx` — aliases novos + parsing dos 4 campos
-- `src/routes/dashboard.tsx` — KPIs reordenados, helpers de formatação corretos, tabela e tipos atualizados
-
-### Fora de escopo (posso fazer depois)
-- Reformular gráficos para mostrar Impressões/Alcance/Cliques como séries adicionais
-- KPIs derivados (CTR = cliques/impressões, CPM = custo/impressões × 1000, frequência = impressões/alcance)
+Sem dados de exemplo, sem alteração de credenciais.
