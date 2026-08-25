@@ -54,11 +54,38 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { getRoleLabel, isMasterAdmin as checkMasterAdmin } from "@/lib/roles";
 import {
+  CLIENT_LOGO_BUCKET,
+  buildClientLogoPath,
+  getManagedClientLogoPath,
+  validateClientLogoFile,
+} from "@/utils/clientLogo";
+import {
   MAX_IMPORT_ROWS,
   assertSafeXlsxArchive,
   validateSpreadsheetFile,
   validateSpreadsheetRow,
 } from "@/utils/spreadsheetSecurity";
+
+async function uploadClientLogo(clientId: string, file: File) {
+  validateClientLogoFile(file);
+  const path = buildClientLogoPath(clientId, file);
+  const { error } = await supabase.storage.from(CLIENT_LOGO_BUCKET).upload(path, file, {
+    cacheControl: "3600",
+    contentType: file.type,
+    upsert: false,
+  });
+  if (error) throw error;
+
+  const { data } = supabase.storage.from(CLIENT_LOGO_BUCKET).getPublicUrl(path);
+  return { path, url: data.publicUrl };
+}
+
+async function removeManagedClientLogo(url: string | null | undefined) {
+  const path = getManagedClientLogoPath(url);
+  if (!path) return;
+  const { error } = await supabase.storage.from(CLIENT_LOGO_BUCKET).remove([path]);
+  if (error) throw error;
+}
 
 function parseNumberBR(value: unknown): number {
   if (value === null || value === undefined) return 0;
@@ -666,9 +693,9 @@ function CreateClientDialog({ onCreated }: { onCreated: () => void }) {
     password: "",
     primary_color: "#0f766e",
     secondary_color: "#0891b2",
-    logo_url: "",
     dashboard_message: "",
   });
+  const [logoFile, setLogoFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -690,6 +717,26 @@ function CreateClientDialog({ onCreated }: { onCreated: () => void }) {
     if (!response.ok) {
       toast.error(payload.error ?? "Falha ao criar cliente");
       return;
+    }
+
+    if (logoFile && payload.client?.id) {
+      try {
+        const uploadedLogo = await uploadClientLogo(payload.client.id, logoFile);
+        const { error: logoUpdateError } = await supabase
+          .from("clients")
+          .update({ logo_url: uploadedLogo.url })
+          .eq("id", payload.client.id);
+        if (logoUpdateError) {
+          await supabase.storage.from(CLIENT_LOGO_BUCKET).remove([uploadedLogo.path]);
+          throw logoUpdateError;
+        }
+      } catch (error) {
+        toast.warning(
+          `Cliente criado, mas a logo nao foi salva: ${error instanceof Error ? error.message : "falha no upload"}`,
+        );
+        onCreated();
+        return;
+      }
     }
 
     toast.success("Cliente criado com sucesso");
@@ -778,12 +825,24 @@ function CreateClientDialog({ onCreated }: { onCreated: () => void }) {
         </div>
 
         <div className="space-y-2">
-          <Label>Logo (URL)</Label>
+          <Label htmlFor="new-client-logo">Logo do cliente</Label>
           <Input
-            value={form.logo_url}
-            onChange={(e) => setForm({ ...form, logo_url: e.target.value })}
-            placeholder="https://..."
+            id="new-client-logo"
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            onChange={(event) => {
+              const file = event.target.files?.[0] ?? null;
+              try {
+                if (file) validateClientLogoFile(file);
+                setLogoFile(file);
+              } catch (error) {
+                event.target.value = "";
+                setLogoFile(null);
+                toast.error(error instanceof Error ? error.message : "Logo invalida");
+              }
+            }}
           />
+          <p className="text-xs text-muted-foreground">PNG, JPEG ou WebP, no maximo 2 MB.</p>
         </div>
 
         <div className="space-y-2">
@@ -823,6 +882,8 @@ function ManageClientDialog({
   const [primaryColor, setPrimaryColor] = useState(client.primary_color);
   const [secondaryColor, setSecondaryColor] = useState(client.secondary_color);
   const [logoUrl, setLogoUrl] = useState(client.logo_url ?? "");
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [removeLogo, setRemoveLogo] = useState(false);
   const [dashboardMessage, setDashboardMessage] = useState(client.dashboard_message ?? "");
   const [saving, setSaving] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -836,39 +897,61 @@ function ManageClientDialog({
 
   async function handleSave() {
     setSaving(true);
-    const { error: clientError } = await supabase
-      .from("clients")
-      .update({
-        primary_color: primaryColor,
-        secondary_color: secondaryColor,
-        logo_url: logoUrl || null,
-        dashboard_message: dashboardMessage || null,
-      })
-      .eq("id", client.id);
+    let uploadedLogo: { path: string; url: string } | null = null;
 
-    if (clientError) {
-      setSaving(false);
-      toast.error(clientError.message);
-      return;
-    }
-
-    if (isMasterAdmin) {
-      const { error: internalError } = await supabase.from("client_internal_metadata").upsert({
-        client_id: client.id,
-        manager_message: message || null,
-        notes: notes || null,
-      });
-      if (internalError) {
-        setSaving(false);
-        toast.error(internalError.message);
-        return;
+    try {
+      if (logoFile) {
+        uploadedLogo = await uploadClientLogo(client.id, logoFile);
       }
+
+      const nextLogoUrl = uploadedLogo?.url ?? (removeLogo ? null : logoUrl || null);
+      const { error: clientError } = await supabase
+        .from("clients")
+        .update({
+          primary_color: primaryColor,
+          secondary_color: secondaryColor,
+          logo_url: nextLogoUrl,
+          dashboard_message: dashboardMessage || null,
+        })
+        .eq("id", client.id);
+
+      if (clientError) {
+        if (uploadedLogo) {
+          await supabase.storage.from(CLIENT_LOGO_BUCKET).remove([uploadedLogo.path]);
+        }
+        throw clientError;
+      }
+
+      if (isMasterAdmin) {
+        const { error: internalError } = await supabase.from("client_internal_metadata").upsert({
+          client_id: client.id,
+          manager_message: message || null,
+          notes: notes || null,
+        });
+        if (internalError) {
+          throw internalError;
+        }
+      }
+
+      if (client.logo_url && client.logo_url !== nextLogoUrl) {
+        try {
+          await removeManagedClientLogo(client.logo_url);
+        } catch {
+          toast.warning("Configuracoes salvas, mas a logo anterior nao pode ser removida");
+        }
+      }
+
+      setLogoUrl(nextLogoUrl ?? "");
+      setLogoFile(null);
+      setRemoveLogo(false);
+      setSaving(false);
+
+      toast.success("Configuracoes salvas");
+      onSaved();
+    } catch (error) {
+      setSaving(false);
+      toast.error(error instanceof Error ? error.message : "Falha ao salvar configuracoes");
     }
-
-    setSaving(false);
-
-    toast.success("Configuracoes salvas");
-    onSaved();
   }
 
   async function handleCreateUser(e: React.FormEvent) {
@@ -1048,12 +1131,61 @@ function ManageClientDialog({
               </div>
 
               <div className="space-y-2">
-                <Label>Logo (URL)</Label>
+                <Label htmlFor={`client-logo-${client.id}`}>Logo do cliente</Label>
                 <Input
-                  value={logoUrl}
-                  onChange={(e) => setLogoUrl(e.target.value)}
-                  placeholder="https://..."
+                  id={`client-logo-${client.id}`}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0] ?? null;
+                    try {
+                      if (file) validateClientLogoFile(file);
+                      setLogoFile(file);
+                      if (file) setRemoveLogo(false);
+                    } catch (error) {
+                      event.target.value = "";
+                      setLogoFile(null);
+                      toast.error(error instanceof Error ? error.message : "Logo invalida");
+                    }
+                  }}
                 />
+                <p className="text-xs text-muted-foreground">PNG, JPEG ou WebP, no maximo 2 MB.</p>
+                {(logoUrl || logoFile) && !removeLogo && (
+                  <div className="flex items-center gap-3 rounded-lg border border-border p-3">
+                    {logoUrl && !logoFile && (
+                      <img
+                        src={logoUrl}
+                        alt={`Logo atual de ${client.company_name}`}
+                        className="h-12 w-20 rounded object-contain"
+                        referrerPolicy="no-referrer"
+                      />
+                    )}
+                    <span className="min-w-0 flex-1 truncate text-sm">
+                      {logoFile ? logoFile.name : "Logo atual"}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setLogoFile(null);
+                        setRemoveLogo(true);
+                      }}
+                    >
+                      Remover
+                    </Button>
+                  </div>
+                )}
+                {removeLogo && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setRemoveLogo(false)}
+                  >
+                    Manter logo atual
+                  </Button>
+                )}
               </div>
 
               <div className="space-y-2">
