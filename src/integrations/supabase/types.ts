@@ -75,9 +75,13 @@ export type Database = {
           company_name: string
           contact_name: string | null
           created_at: string
+          dashboard_message: string | null
           id: string
+          logo_url: string | null
           manager_message: string | null
           notes: string | null
+          primary_color: string
+          secondary_color: string
           updated_at: string
           user_id: string | null
         }
@@ -85,9 +89,13 @@ export type Database = {
           company_name: string
           contact_name?: string | null
           created_at?: string
+          dashboard_message?: string | null
           id?: string
+          logo_url?: string | null
           manager_message?: string | null
           notes?: string | null
+          primary_color?: string
+          secondary_color?: string
           updated_at?: string
           user_id?: string | null
         }
@@ -95,9 +103,13 @@ export type Database = {
           company_name?: string
           contact_name?: string | null
           created_at?: string
+          dashboard_message?: string | null
           id?: string
+          logo_url?: string | null
           manager_message?: string | null
           notes?: string | null
+          primary_color?: string
+          secondary_color?: string
           updated_at?: string
           user_id?: string | null
         }
@@ -105,6 +117,7 @@ export type Database = {
       }
       profiles: {
         Row: {
+          client_id: string | null
           created_at: string
           display_name: string | null
           email: string
@@ -112,6 +125,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          client_id?: string | null
           created_at?: string
           display_name?: string | null
           email: string
@@ -119,13 +133,22 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          client_id?: string | null
           created_at?: string
           display_name?: string | null
           email?: string
           id?: string
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "profiles_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       user_roles: {
         Row: {
@@ -153,6 +176,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_user_client_id: { Args: { _user_id: string }; Returns: string }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
