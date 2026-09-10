@@ -2,6 +2,32 @@
 
 // On a Lovable preview surface, broker the auth session to the editor over
 // postMessage so the project's preview surfaces share one login; else localStorage.
+const AUTH_PERSISTENCE_KEY = "metrica-auth-persistence";
+
+export function setAuthPersistence(remember: boolean) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(AUTH_PERSISTENCE_KEY, remember ? "persistent" : "session");
+}
+
+function deviceAuthStorage() {
+  const selectedStorage = () =>
+    localStorage.getItem(AUTH_PERSISTENCE_KEY) === "session" ? sessionStorage : localStorage;
+
+  return {
+    getItem: (key: string) => selectedStorage().getItem(key),
+    setItem: (key: string, value: string) => {
+      const target = selectedStorage();
+      const other = target === localStorage ? sessionStorage : localStorage;
+      other.removeItem(key);
+      target.setItem(key, value);
+    },
+    removeItem: (key: string) => {
+      localStorage.removeItem(key);
+      sessionStorage.removeItem(key);
+    },
+  };
+}
+
 export function brokeredPreviewStorage() {
   if (typeof window === "undefined") return undefined;
   const host = location.hostname;
@@ -22,7 +48,7 @@ export function brokeredPreviewStorage() {
       )?.[1] ?? host.match(new RegExp("^(" + UUID + ")(?=[.-])", "i"))?.[1])
     : undefined;
   const framed = window.parent && window.parent !== window;
-  if (!projectId || !framed) return localStorage;
+  if (!projectId || !framed) return deviceAuthStorage();
 
   // Post only to the real editor ancestor, validated as a Lovable origin, so the
   // session token can never reach an untrusted embedder.

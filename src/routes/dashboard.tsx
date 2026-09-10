@@ -16,7 +16,6 @@ import {
 import {
   ArrowLeft,
   BarChart3,
-  Loader2,
   LogOut,
   MousePointerClick,
   PlayCircle,
@@ -28,6 +27,7 @@ import {
 } from "lucide-react";
 
 import { AuthGuard } from "@/components/AuthGuard";
+import { DashboardSkeleton } from "@/components/DashboardSkeleton";
 import { TooltipInfo } from "@/components/TooltipInfo";
 import { Button } from "@/components/ui/button";
 import {
@@ -314,11 +314,7 @@ function DashboardPage() {
   }, [filtered]);
 
   if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
+    return <DashboardSkeleton />;
   }
 
   if (!client) {
