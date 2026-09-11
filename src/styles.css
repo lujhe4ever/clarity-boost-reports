@@ -35,6 +35,36 @@
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
 }
 
+.dashboard-filter-control {
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    color 180ms ease,
+    background-color 180ms ease,
+    transform 120ms ease;
+}
+
+.dashboard-filter-control:hover,
+.dashboard-filter-control:focus-visible,
+.dashboard-filter-control[data-state="open"] {
+  border-color: var(--client-accent);
+  box-shadow:
+    0 0 0 1px var(--client-accent-soft),
+    0 0 18px var(--client-accent-soft);
+}
+
+.dashboard-filter-control:active {
+  border-color: var(--client-accent);
+  box-shadow: 0 0 22px var(--client-accent-soft);
+  transform: scale(0.985);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-filter-control {
+    transition: none;
+  }
+}
+
 :root {
   --radius: 0.75rem;
 

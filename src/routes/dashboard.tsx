@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { addDays, differenceInCalendarDays, format, parseISO, startOfDay } from "date-fns";
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { addDays, format, parseISO, startOfDay } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
   Area,
@@ -51,9 +51,19 @@ import { resolveClientConfig } from "@/config/clientConfig";
 import { metricDescriptions } from "@/utils/metricDescriptions";
 import { generateInsights, type InsightMetrics } from "@/utils/insightsEngine";
 import { generateAISummary } from "@/services/aiSummary";
+import {
+  filterByCampaign,
+  filterByMonth,
+  filterByPeriod,
+  getAvailableMonths,
+  getCampaignNames,
+  getMonthWindow,
+  getPeriodWindow,
+  getPreviousMonthWindow,
+  type DashboardPeriod,
+} from "@/utils/dashboardFilters";
 
 type SearchParams = { client_id?: string };
-type DashboardPeriod = "7" | "30" | "90" | "all";
 
 type Campaign = {
   id: string;
@@ -112,6 +122,8 @@ function DashboardPage() {
   const [summaryLoading, setSummaryLoading] = useState(true);
   const [aiSummary, setAiSummary] = useState("");
   const [period, setPeriod] = useState<DashboardPeriod>("all");
+  const [selectedCampaign, setSelectedCampaign] = useState("all");
+  const [selectedMonth, setSelectedMonth] = useState("all");
 
   useEffect(() => {
     if (isMasterAdmin && !requestedClientId) {
@@ -190,15 +202,26 @@ function DashboardPage() {
 
   const clientConfig = useMemo(() => resolveClientConfig(client), [client]);
 
+  const campaignNames = useMemo(() => getCampaignNames(campaigns), [campaigns]);
+  const availableMonths = useMemo(() => getAvailableMonths(campaigns), [campaigns]);
+
+  const campaignsForSelection = useMemo(
+    () => filterByCampaign(campaigns, selectedCampaign),
+    [campaigns, selectedCampaign],
+  );
+
   const filtered = useMemo(() => {
-    return filterCampaignsByPeriod(campaigns, period);
-  }, [campaigns, period]);
+    if (selectedMonth !== "all") {
+      return filterByMonth(campaignsForSelection, selectedMonth);
+    }
+    return filterByPeriod(campaignsForSelection, period);
+  }, [campaignsForSelection, period, selectedMonth]);
 
   const totals = useMemo(() => aggregateMetrics(filtered), [filtered]);
 
   const comparisonMetrics = useMemo(
-    () => buildComparisonMetricsForPeriod(campaigns, period),
-    [campaigns, period],
+    () => buildComparisonMetrics(campaignsForSelection, period, selectedMonth),
+    [campaignsForSelection, period, selectedMonth],
   );
 
   const insights = useMemo(
@@ -207,6 +230,7 @@ function DashboardPage() {
   );
 
   const periodLabel = useMemo(() => {
+    if (selectedMonth !== "all") return formatMonthLabel(selectedMonth);
     switch (period) {
       case "7":
         return "Ultimos 7 dias";
@@ -217,7 +241,12 @@ function DashboardPage() {
       default:
         return "Todo o periodo disponivel";
     }
-  }, [period]);
+  }, [period, selectedMonth]);
+
+  const filterStyle = {
+    "--client-accent": clientConfig.primaryColor,
+    "--client-accent-soft": `${clientConfig.primaryColor}33`,
+  } as CSSProperties;
 
   useEffect(() => {
     const summaryInput = {
@@ -346,10 +375,10 @@ function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen" style={filterStyle}>
       <header className="border-b border-border bg-card/30 backdrop-blur">
-        <div className="container mx-auto flex items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-3">
+        <div className="container mx-auto flex flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6">
+          <div className="flex min-w-0 items-center gap-3">
             {canManageClients && (
               <Link to="/admin">
                 <Button variant="ghost" size="icon" className="h-9 w-9">
@@ -378,15 +407,21 @@ function DashboardPage() {
               </div>
             )}
 
-            <div>
-              <div className="text-sm font-semibold">{client.company_name}</div>
+            <div className="min-w-0">
+              <div className="truncate text-sm font-semibold">{client.company_name}</div>
               <div className="text-xs text-muted-foreground">Dashboard de trafego</div>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <Select value={period} onValueChange={(v) => setPeriod(v as typeof period)}>
-              <SelectTrigger className="w-[160px]">
+          <div className="flex w-full items-center gap-2 sm:w-auto">
+            <Select
+              value={period}
+              onValueChange={(value) => {
+                setPeriod(value as DashboardPeriod);
+                setSelectedMonth("all");
+              }}
+            >
+              <SelectTrigger className="dashboard-filter-control min-w-0 flex-1 sm:w-[160px] sm:flex-none">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -404,7 +439,70 @@ function DashboardPage() {
         </div>
       </header>
 
-      <main className="container mx-auto space-y-6 px-6 py-8">
+      <main className="container mx-auto space-y-6 px-4 py-6 sm:px-6 sm:py-8">
+        <section
+          aria-label="Filtros do dashboard"
+          className="dashboard-filters glass-card grid gap-3 rounded-2xl p-4 sm:grid-cols-2 lg:grid-cols-3"
+        >
+          <DashboardFilter label="Campanha ativa">
+            <Select value={selectedCampaign} onValueChange={setSelectedCampaign}>
+              <SelectTrigger
+                className="dashboard-filter-control w-full"
+                aria-label="Selecionar campanha"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todas as campanhas</SelectItem>
+                {campaignNames.map((name) => (
+                  <SelectItem key={name} value={name}>
+                    {name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </DashboardFilter>
+
+          <DashboardFilter label="Mês dos dados">
+            <Select
+              value={selectedMonth}
+              onValueChange={(value) => {
+                setSelectedMonth(value);
+                if (value !== "all") setPeriod("all");
+              }}
+            >
+              <SelectTrigger
+                className="dashboard-filter-control w-full"
+                aria-label="Selecionar mês"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos os meses</SelectItem>
+                {availableMonths.map((month) => (
+                  <SelectItem key={month} value={month}>
+                    {formatMonthLabel(month)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </DashboardFilter>
+
+          <div className="flex items-end">
+            <Button
+              type="button"
+              variant="outline"
+              className="dashboard-filter-control w-full"
+              onClick={() => {
+                setSelectedCampaign("all");
+                setSelectedMonth("all");
+                setPeriod("all");
+              }}
+            >
+              Limpar filtros
+            </Button>
+          </div>
+        </section>
         <section
           className="rounded-2xl border border-border bg-card/60 p-6"
           style={{
@@ -643,6 +741,17 @@ function SummaryChip({ label, value }: { label: string; value: string }) {
   );
 }
 
+function DashboardFilter({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <label className="space-y-2">
+      <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+        {label}
+      </span>
+      {children}
+    </label>
+  );
+}
+
 function KpiCard({
   label,
   metricKey,
@@ -740,40 +849,28 @@ function aggregateMetrics(campaigns: Campaign[]): InsightMetrics {
   };
 }
 
-function getPeriodWindow(campaigns: Campaign[], period: DashboardPeriod) {
-  if (campaigns.length === 0) return null;
+function buildComparisonMetrics(
+  campaigns: Campaign[],
+  period: DashboardPeriod,
+  selectedMonth: string,
+) {
+  if (selectedMonth !== "all") {
+    const currentWindow = getMonthWindow(selectedMonth);
+    const previousWindow = getPreviousMonthWindow(selectedMonth);
+    const currentCampaigns = filterByMonth(campaigns, selectedMonth);
+    const previousCampaigns = campaigns.filter((campaign) => {
+      const date = startOfDay(parseISO(campaign.date));
+      return date >= previousWindow.start && date <= previousWindow.end;
+    });
 
-  const ordered = [...campaigns].sort((a, b) => a.date.localeCompare(b.date));
-  const earliestDate = startOfDay(parseISO(ordered[0].date));
-  const latestDate = startOfDay(parseISO(ordered[ordered.length - 1].date));
-
-  if (period === "all") {
     return {
-      start: earliestDate,
-      end: latestDate,
-      spanDays: Math.max(1, differenceInCalendarDays(latestDate, earliestDate) + 1),
+      current: aggregateMetrics(currentCampaigns),
+      previous: aggregateMetrics(previousCampaigns),
+      hasPreviousPeriod: previousCampaigns.length > 0,
+      currentWindow,
     };
   }
 
-  const spanDays = parseInt(period, 10);
-  return {
-    start: addDays(latestDate, -(spanDays - 1)),
-    end: latestDate,
-    spanDays,
-  };
-}
-
-function filterCampaignsByPeriod(campaigns: Campaign[], period: DashboardPeriod) {
-  const window = getPeriodWindow(campaigns, period);
-  if (!window) return [];
-
-  return campaigns.filter((campaign) => {
-    const date = startOfDay(parseISO(campaign.date));
-    return date >= window.start && date <= window.end;
-  });
-}
-
-function buildComparisonMetricsForPeriod(campaigns: Campaign[], period: DashboardPeriod) {
   const window = getPeriodWindow(campaigns, period);
   if (!window) {
     return {
@@ -801,6 +898,11 @@ function buildComparisonMetricsForPeriod(campaigns: Campaign[], period: Dashboar
     previous: aggregateMetrics(previousCampaigns),
     hasPreviousPeriod: previousCampaigns.length > 0,
   };
+}
+
+function formatMonthLabel(month: string) {
+  const value = format(parseISO(`${month}-01`), "MMMM 'de' yyyy", { locale: ptBR });
+  return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
 function fmtBRL(value: number) {
