@@ -17,7 +17,6 @@ import { Route as ApiAiSummaryRouteImport } from './routes/api/ai-summary'
 import { Route as ApiClientLogoRouteImport } from './routes/api/client-logo'
 import { Route as ApiCreateClientRouteImport } from './routes/api/create-client'
 import { Route as ApiDeleteClientRouteImport } from './routes/api/delete-client'
-import { Route as ApiSyncCanonicalMetricsRouteImport } from './routes/api/sync-canonical-metrics'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -59,11 +58,6 @@ const ApiDeleteClientRoute = ApiDeleteClientRouteImport.update({
   path: '/api/delete-client',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiSyncCanonicalMetricsRoute = ApiSyncCanonicalMetricsRouteImport.update({
-  id: '/api/sync-canonical-metrics',
-  path: '/api/sync-canonical-metrics',
-  getParentRoute: () => rootRouteImport,
-} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -74,7 +68,6 @@ export interface FileRoutesByFullPath {
   '/api/client-logo': typeof ApiClientLogoRoute
   '/api/create-client': typeof ApiCreateClientRoute
   '/api/delete-client': typeof ApiDeleteClientRoute
-  '/api/sync-canonical-metrics': typeof ApiSyncCanonicalMetricsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -85,7 +78,6 @@ export interface FileRoutesByTo {
   '/api/client-logo': typeof ApiClientLogoRoute
   '/api/create-client': typeof ApiCreateClientRoute
   '/api/delete-client': typeof ApiDeleteClientRoute
-  '/api/sync-canonical-metrics': typeof ApiSyncCanonicalMetricsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -97,7 +89,6 @@ export interface FileRoutesById {
   '/api/client-logo': typeof ApiClientLogoRoute
   '/api/create-client': typeof ApiCreateClientRoute
   '/api/delete-client': typeof ApiDeleteClientRoute
-  '/api/sync-canonical-metrics': typeof ApiSyncCanonicalMetricsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -110,7 +101,6 @@ export interface FileRouteTypes {
     | '/api/client-logo'
     | '/api/create-client'
     | '/api/delete-client'
-    | '/api/sync-canonical-metrics'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -121,7 +111,6 @@ export interface FileRouteTypes {
     | '/api/client-logo'
     | '/api/create-client'
     | '/api/delete-client'
-    | '/api/sync-canonical-metrics'
   id:
     | '__root__'
     | '/'
@@ -132,7 +121,6 @@ export interface FileRouteTypes {
     | '/api/client-logo'
     | '/api/create-client'
     | '/api/delete-client'
-    | '/api/sync-canonical-metrics'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -144,7 +132,6 @@ export interface RootRouteChildren {
   ApiClientLogoRoute: typeof ApiClientLogoRoute
   ApiCreateClientRoute: typeof ApiCreateClientRoute
   ApiDeleteClientRoute: typeof ApiDeleteClientRoute
-  ApiSyncCanonicalMetricsRoute: typeof ApiSyncCanonicalMetricsRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -205,13 +192,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiDeleteClientRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/sync-canonical-metrics': {
-      id: '/api/sync-canonical-metrics'
-      path: '/api/sync-canonical-metrics'
-      fullPath: '/api/sync-canonical-metrics'
-      preLoaderRoute: typeof ApiSyncCanonicalMetricsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
   }
 }
 
@@ -224,7 +204,6 @@ const rootRouteChildren: RootRouteChildren = {
   ApiClientLogoRoute: ApiClientLogoRoute,
   ApiCreateClientRoute: ApiCreateClientRoute,
   ApiDeleteClientRoute: ApiDeleteClientRoute,
-  ApiSyncCanonicalMetricsRoute: ApiSyncCanonicalMetricsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

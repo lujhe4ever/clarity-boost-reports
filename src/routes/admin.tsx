@@ -1009,14 +1009,17 @@ function ManageClientDialog({
       }
 
       const { data: sessionData } = await supabase.auth.getSession();
-      const syncResponse = await fetch("/api/sync-canonical-metrics", {
+      const syncResponse = await fetch(
+        "https://gvuggswkvsysaqtlsrdc.supabase.co/functions/v1/sync-canonical-metrics",
+        {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${sessionData.session?.access_token ?? ""}`,
         },
         body: JSON.stringify({ clientName: client.company_name, records }),
-      });
+        },
+      );
       if (!syncResponse.ok) {
         setImporting(false);
         toast.error("Os dados não foram gravados na base oficial. Nenhuma importação foi concluída.");

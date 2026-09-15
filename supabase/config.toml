@@ -1,1 +1,4 @@
 project_id = "mgqcwltklvjidrtmxxmr"
+
+[functions.sync-canonical-metrics]
+verify_jwt = false
