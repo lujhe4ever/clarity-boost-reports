@@ -60,6 +60,13 @@ import {
   validateSpreadsheetFile,
   validateSpreadsheetRow,
 } from "@/utils/spreadsheetSecurity";
+import {
+  FIELD_ALIASES as META_FIELD_ALIASES,
+  isAggregateMetaRow,
+  parseMetaNumber,
+  pickMetaField,
+  rowsToMetaAdsObjects,
+} from "@/utils/metaAdsImport";
 
 async function saveClientLogo(clientId: string, file: File | null, remove = false) {
   if (file) validateClientLogoFile(file);
@@ -387,11 +394,28 @@ async function readSpreadsheet(file: File): Promise<Record<string, unknown>[]> {
     assertSafeXlsxArchive(buf);
     const workbook = new Workbook();
     await workbook.xlsx.load(buf);
-    const firstSheet = workbook.worksheets[0];
-    if (!firstSheet) throw new Error("O arquivo XLSX nao contem planilhas.");
+    const selectedSheet =
+      workbook.worksheets.find((sheet) => sheet.name.trim().toLowerCase() === "raw data report") ??
+      workbook.worksheets.find((sheet) => {
+        const preview: unknown[][] = [];
+        sheet.eachRow({ includeEmpty: false }, (row) => {
+          if (preview.length < 100)
+            preview.push(
+              (Array.isArray(row.values) ? row.values.slice(1) : []).map(normalizeSpreadsheetCell),
+            );
+        });
+        try {
+          rowsToMetaAdsObjects(preview);
+          return true;
+        } catch {
+          return false;
+        }
+      });
+    if (!selectedSheet)
+      throw new Error("Nao foi encontrada uma aba com cabecalho valido do Meta Ads.");
 
     const rows: unknown[][] = [];
-    firstSheet.eachRow({ includeEmpty: false }, (worksheetRow, rowNumber) => {
+    selectedSheet.eachRow({ includeEmpty: false }, (worksheetRow, rowNumber) => {
       if (rows.length >= MAX_IMPORT_ROWS + 1) {
         throw new Error(`O arquivo excede o limite de ${MAX_IMPORT_ROWS} linhas de dados.`);
       }
@@ -401,7 +425,7 @@ async function readSpreadsheet(file: File): Promise<Record<string, unknown>[]> {
       rows.push(values);
     });
 
-    return rowsToObjects(rows);
+    return rowsToMetaAdsObjects(rows);
   }
 
   return new Promise((resolve, reject) => {
@@ -425,7 +449,7 @@ async function readSpreadsheet(file: File): Promise<Record<string, unknown>[]> {
         }
       },
       complete: (result) => {
-        if (!result.meta.aborted) resolve(rowsToObjects(rows));
+        if (!result.meta.aborted) resolve(rowsToMetaAdsObjects(rows));
       },
       error: (error) => reject(error),
     });
@@ -971,26 +995,44 @@ function ManageClientDialog({
       const dateAnalysis = analyzeDateColumns(rows);
 
       const records = rows
+        .filter((row) => !isAggregateMetaRow(row))
         .map((row) => {
           const date = extractDateFromRow(row);
-          const platformVal = pickField(row, [...FIELD_ALIASES.platform]);
-          const campaignVal = pickField(row, [...FIELD_ALIASES.campaign_name]);
+          const platformVal = pickMetaField(row, META_FIELD_ALIASES.platform);
+          const campaignVal = pickMetaField(row, META_FIELD_ALIASES.campaign_name);
+          const objective = String(pickMetaField(row, META_FIELD_ALIASES.objective) ?? "").trim();
+          const explicitLeads = parseMetaNumber(pickMetaField(row, META_FIELD_ALIASES.leads));
+          const results = parseMetaNumber(pickMetaField(row, META_FIELD_ALIASES.results));
+          const resultsAreLeads = /lead|cadastro|formulario/i.test(objective);
+          const investment = parseMetaNumber(pickMetaField(row, META_FIELD_ALIASES.investment));
+          const impressions = parseMetaNumber(pickMetaField(row, META_FIELD_ALIASES.impressions));
+
+          if (investment === null)
+            throw new Error(
+              "Nao foi possivel identificar um valor de investimento valido no relatorio.",
+            );
+          if (impressions === null)
+            throw new Error(
+              "Nao foi possivel identificar uma quantidade de impressoes valida no relatorio.",
+            );
 
           return {
             client_id: client.id,
             date,
             platform: (platformVal ? String(platformVal).trim() : "") || "Meta Ads",
             campaign_name: (campaignVal ? String(campaignVal).trim() : "") || "Sem nome",
-            investment: parseNumberBR(pickField(row, [...FIELD_ALIASES.investment])),
-            leads: Math.round(parseNumberBR(pickField(row, [...FIELD_ALIASES.leads]))),
-            revenue: parseNumberBR(pickField(row, [...FIELD_ALIASES.revenue])),
-            impressions: Math.round(parseNumberBR(pickField(row, [...FIELD_ALIASES.impressions]))),
-            reach: Math.round(parseNumberBR(pickField(row, [...FIELD_ALIASES.reach]))),
-            views: Math.round(parseNumberBR(pickField(row, [...FIELD_ALIASES.views]))),
-            clicks: Math.round(parseNumberBR(pickField(row, [...FIELD_ALIASES.clicks]))),
+            investment,
+            leads: Math.round(explicitLeads ?? (resultsAreLeads ? (results ?? 0) : 0)),
+            revenue: parseMetaNumber(pickMetaField(row, META_FIELD_ALIASES.revenue)) ?? 0,
+            impressions: Math.round(impressions),
+            reach: Math.round(parseMetaNumber(pickMetaField(row, META_FIELD_ALIASES.reach)) ?? 0),
+            views: Math.round(parseMetaNumber(pickMetaField(row, META_FIELD_ALIASES.views)) ?? 0),
+            clicks: Math.round(parseMetaNumber(pickMetaField(row, META_FIELD_ALIASES.clicks)) ?? 0),
+            objective: objective || null,
+            result_value: results,
           };
         })
-        .filter((record) => record.date);
+        .filter((record) => record.date && record.campaign_name !== "Sem nome");
 
       const ignored = totalRows - records.length;
 
@@ -1012,21 +1054,42 @@ function ManageClientDialog({
       const syncResponse = await fetch(
         "https://gvuggswkvsysaqtlsrdc.supabase.co/functions/v1/sync-canonical-metrics",
         {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${sessionData.session?.access_token ?? ""}`,
-        },
-        body: JSON.stringify({ clientName: client.company_name, records }),
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${sessionData.session?.access_token ?? ""}`,
+          },
+          body: JSON.stringify({ clientName: client.company_name, records }),
         },
       );
       if (!syncResponse.ok) {
         setImporting(false);
-        toast.error("Os dados não foram gravados na base oficial. Nenhuma importação foi concluída.");
+        toast.error(
+          "Os dados não foram gravados na base oficial. Nenhuma importação foi concluída.",
+        );
         return;
       }
 
-      const { error } = await supabase.from("campaigns").insert(records);
+      const { data: existingRecords, error: existingError } = await supabase
+        .from("campaigns")
+        .select("date, platform, campaign_name")
+        .eq("client_id", client.id);
+      if (existingError) throw existingError;
+      const existingKeys = new Set(
+        (existingRecords ?? []).map(
+          (item) => `${item.date}:${item.platform}:${item.campaign_name}`,
+        ),
+      );
+      const newRecords = records.filter(
+        (record) => !existingKeys.has(`${record.date}:${record.platform}:${record.campaign_name}`),
+      );
+      const campaignRecords = newRecords.map(
+        ({ objective: _objective, result_value: _resultValue, ...record }) => record,
+      );
+      const { error } =
+        campaignRecords.length > 0
+          ? await supabase.from("campaigns").insert(campaignRecords)
+          : { error: null };
       setImporting(false);
 
       if (error) {
@@ -1035,7 +1098,7 @@ function ManageClientDialog({
       }
 
       toast.success(
-        `${records.length} linhas importadas${ignored > 0 ? ` (${ignored} ignoradas)` : ""}.`,
+        `Relatorio importado com sucesso: ${newRecords.length} novas, ${records.length - newRecords.length} ja existentes${ignored > 0 ? ` e ${ignored} ignoradas` : ""}.`,
       );
     } catch (error: unknown) {
       setImporting(false);

@@ -15,6 +15,8 @@ type ImportedMetric = {
   clicks: number;
   reach: number;
   views: number;
+  objective?: string | null;
+  result_value?: number | null;
 };
 
 function corsHeaders(request: Request) {
@@ -115,12 +117,16 @@ Deno.serve(async (request) => {
   const canonical = createClient(canonicalUrl, canonicalServiceKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
-  const { data: client, error: clientError } = await canonical
+  const normalizedClientName = payload.clientName.trim().toLocaleLowerCase();
+  const { data: clients, error: clientError } = await canonical
     .from("clients")
-    .select("id")
-    .eq("name", payload.clientName)
-    .maybeSingle();
-  if (clientError || !client) return response({ error: "Canonical client not found" }, 422, request);
+    .select("id, name")
+    .limit(1000);
+  const client = clients?.find(
+    (entry) => entry.name.trim().toLocaleLowerCase() === normalizedClientName,
+  );
+  if (clientError || !client)
+    return response({ error: "Canonical client not found" }, 422, request);
 
   const metrics = payload.records.map((row) => ({
     client_id: client.id,
@@ -138,12 +144,29 @@ Deno.serve(async (request) => {
       campaign_name: row.campaign_name,
       reach: Math.round(row.reach),
       views: Math.round(row.views),
+      objective: row.objective ?? null,
+      result_value: row.result_value ?? null,
     },
   }));
-  const { error: syncError } = await canonical
-    .from("traffic_metrics")
-    .upsert(metrics, { onConflict: "client_id,platform,period_start,period_end,source,source_record_id" });
+  const { error: syncError } = await canonical.from("traffic_metrics").upsert(metrics, {
+    onConflict: "client_id,platform,period_start,period_end,source,source_record_id",
+  });
   if (syncError) return response({ error: "Canonical sync failed" }, 502, request);
+
+  const dates = metrics.map((metric) => metric.period_start).sort();
+  const { error: logError } = await canonical.from("activity_log").insert({
+    client_id: client.id,
+    owner_id: userData.user.id,
+    action: "metrics_import",
+    entity_type: "traffic_metrics",
+    metadata: {
+      source: "metrics_dashboard",
+      records: metrics.length,
+      period_start: dates[0] ?? null,
+      period_end: dates.at(-1) ?? null,
+    },
+  });
+  if (logError) return response({ error: "Canonical import audit failed" }, 502, request);
 
   return response({ synced: metrics.length }, 200, request);
 });
