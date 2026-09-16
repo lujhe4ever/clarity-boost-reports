@@ -60,6 +60,13 @@ import {
   validateSpreadsheetFile,
   validateSpreadsheetRow,
 } from "@/utils/spreadsheetSecurity";
+import {
+  PREFERRED_SHEET_NAMES,
+  analyzeDateColumns,
+  normalizeKey,
+  parseCampaignRows,
+  rowsToObjects,
+} from "@/utils/metaAdsParser";
 
 async function saveClientLogo(clientId: string, file: File | null, remove = false) {
   if (file) validateClientLogoFile(file);
