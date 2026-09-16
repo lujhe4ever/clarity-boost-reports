@@ -693,34 +693,12 @@ function ManageClientDialog({
 
     try {
       const rows = await readSpreadsheet(file);
-      const totalRows = rows.length;
       const dateAnalysis = analyzeDateColumns(rows);
+      const parsed = parseCampaignRows(rows);
 
-      const records = rows
-        .map((row) => {
-          const date = extractDateFromRow(row);
-          const platformVal = pickField(row, [...FIELD_ALIASES.platform]);
-          const campaignVal = pickField(row, [...FIELD_ALIASES.campaign_name]);
+      const ignored = parsed.ignoredAggregate + parsed.ignoredNoDate;
 
-          return {
-            client_id: client.id,
-            date,
-            platform: (platformVal ? String(platformVal).trim() : "") || "Meta Ads",
-            campaign_name: (campaignVal ? String(campaignVal).trim() : "") || "Sem nome",
-            investment: parseNumberBR(pickField(row, [...FIELD_ALIASES.investment])),
-            leads: Math.round(parseNumberBR(pickField(row, [...FIELD_ALIASES.leads]))),
-            revenue: parseNumberBR(pickField(row, [...FIELD_ALIASES.revenue])),
-            impressions: Math.round(parseNumberBR(pickField(row, [...FIELD_ALIASES.impressions]))),
-            reach: Math.round(parseNumberBR(pickField(row, [...FIELD_ALIASES.reach]))),
-            views: Math.round(parseNumberBR(pickField(row, [...FIELD_ALIASES.views]))),
-            clicks: Math.round(parseNumberBR(pickField(row, [...FIELD_ALIASES.clicks]))),
-          };
-        })
-        .filter((record) => record.date);
-
-      const ignored = totalRows - records.length;
-
-      if (records.length === 0) {
+      if (parsed.records.length === 0) {
         if (dateAnalysis.multiDayRanges > 0) {
           toast.error(
             `Esse arquivo veio consolidado por periodo (${dateAnalysis.sampleRange || "intervalo maior que um dia"}). Exporte do Meta com detalhamento por tempo em Dia para usar no dashboard diario.`,
@@ -734,6 +712,35 @@ function ManageClientDialog({
         return;
       }
 
+      const syncRecords = parsed.records.map((record) => ({
+        date: record.date,
+        platform: record.platform,
+        campaign_name: record.campaign_name,
+        objective: record.objective,
+        result_value: record.result_value,
+        investment: record.investment,
+        leads: record.leads,
+        revenue: record.revenue,
+        impressions: record.impressions,
+        reach: record.reach,
+        views: record.views,
+        clicks: record.clicks,
+      }));
+
+      const campaignRecords = parsed.records.map((record) => ({
+        client_id: client.id,
+        date: record.date,
+        platform: record.platform,
+        campaign_name: record.campaign_name,
+        investment: record.investment,
+        leads: record.leads,
+        revenue: record.revenue,
+        impressions: record.impressions,
+        reach: record.reach,
+        views: record.views,
+        clicks: record.clicks,
+      }));
+
       const { data: sessionData } = await supabase.auth.getSession();
       const syncResponse = await fetch(
         "https://gvuggswkvsysaqtlsrdc.supabase.co/functions/v1/sync-canonical-metrics",
@@ -743,7 +750,7 @@ function ManageClientDialog({
           "Content-Type": "application/json",
           Authorization: `Bearer ${sessionData.session?.access_token ?? ""}`,
         },
-        body: JSON.stringify({ clientName: client.company_name, records }),
+        body: JSON.stringify({ clientName: client.company_name, records: syncRecords }),
         },
       );
       if (!syncResponse.ok) {
@@ -752,7 +759,7 @@ function ManageClientDialog({
         return;
       }
 
-      const { error } = await supabase.from("campaigns").insert(records);
+      const { error } = await supabase.from("campaigns").insert(campaignRecords);
       setImporting(false);
 
       if (error) {
@@ -761,7 +768,7 @@ function ManageClientDialog({
       }
 
       toast.success(
-        `${records.length} linhas importadas${ignored > 0 ? ` (${ignored} ignoradas)` : ""}.`,
+        `${campaignRecords.length} linhas importadas${ignored > 0 ? ` (${ignored} ignoradas)` : ""}.`,
       );
     } catch (error: unknown) {
       setImporting(false);
