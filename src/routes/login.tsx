@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Loader2, BarChart3, LockKeyhole, TrendingUp } from "lucide-react";
 import { canManageClients, resolveHighestRole } from "@/lib/roles";
-import { setAuthPersistence } from "@/integrations/supabase/previewAuthStorage";
+import { setAuthPersistence } from "@/lib/authPersistence";
 
 export const Route = createFileRoute("/login")({
   head: () => ({
