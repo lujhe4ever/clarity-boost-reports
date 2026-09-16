@@ -110,11 +110,14 @@ async function readSpreadsheet(file: File): Promise<Record<string, unknown>[]> {
     assertSafeXlsxArchive(buf);
     const workbook = new Workbook();
     await workbook.xlsx.load(buf);
-    const firstSheet = workbook.worksheets[0];
-    if (!firstSheet) throw new Error("O arquivo XLSX nao contem planilhas.");
+    const preferredSheet = workbook.worksheets.find((sheet) =>
+      PREFERRED_SHEET_NAMES.includes(normalizeKey(sheet.name ?? "")),
+    );
+    const sheet = preferredSheet ?? workbook.worksheets[0];
+    if (!sheet) throw new Error("O arquivo XLSX nao contem planilhas.");
 
     const rows: unknown[][] = [];
-    firstSheet.eachRow({ includeEmpty: false }, (worksheetRow, rowNumber) => {
+    sheet.eachRow({ includeEmpty: false }, (worksheetRow, rowNumber) => {
       if (rows.length >= MAX_IMPORT_ROWS + 1) {
         throw new Error(`O arquivo excede o limite de ${MAX_IMPORT_ROWS} linhas de dados.`);
       }
