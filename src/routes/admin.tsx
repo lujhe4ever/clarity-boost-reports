@@ -60,6 +60,13 @@ import {
   validateSpreadsheetFile,
   validateSpreadsheetRow,
 } from "@/utils/spreadsheetSecurity";
+import {
+  PREFERRED_SHEET_NAMES,
+  analyzeDateColumns,
+  normalizeKey,
+  parseCampaignRows,
+  rowsToObjects,
+} from "@/utils/metaAdsParser";
 
 async function saveClientLogo(clientId: string, file: File | null, remove = false) {
   if (file) validateClientLogoFile(file);
@@ -81,283 +88,6 @@ async function saveClientLogo(clientId: string, file: File | null, remove = fals
   return (payload.logo_url as string | null) ?? null;
 }
 
-function parseNumberBR(value: unknown): number {
-  if (value === null || value === undefined) return 0;
-  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
-
-  let s = String(value).trim();
-  if (!s) return 0;
-
-  s = s.replace(/[R$\s\u00A0"']/gi, "").replace(/%/g, "");
-  const negative = s.startsWith("-");
-  if (negative) s = s.slice(1);
-  if (!s) return 0;
-
-  const hasComma = s.includes(",");
-  const hasDot = s.includes(".");
-
-  if (hasComma && hasDot) {
-    s = s.replace(/\./g, "").replace(",", ".");
-  } else if (hasComma) {
-    s = s.replace(",", ".");
-  } else if (hasDot) {
-    const parts = s.split(".");
-    const last = parts[parts.length - 1];
-    if (parts.length > 2 || (parts.length === 2 && last.length === 3 && parts[0].length <= 3)) {
-      s = s.replace(/\./g, "");
-    }
-  }
-
-  const n = parseFloat(s);
-  if (Number.isNaN(n)) return 0;
-  return negative ? -n : n;
-}
-
-function normalizeKey(k: string): string {
-  return k
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/\([^)]*\)/g, "")
-    .replace(/[_\-./]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function pickField(row: Record<string, unknown>, aliases: string[]): unknown {
-  const normalizedAliases = aliases.map(normalizeKey);
-  for (const key of Object.keys(row)) {
-    const normalizedKey = normalizeKey(key);
-    if (normalizedAliases.includes(normalizedKey)) {
-      return row[key];
-    }
-  }
-  return undefined;
-}
-
-const FIELD_ALIASES = {
-  date: ["data", "date", "dia", "day"],
-  report_start: ["inicio dos relatorios", "reporting starts", "data inicial do relatorio"],
-  report_end: ["encerramento dos relatorios", "reporting ends", "data final do relatorio"],
-  campaign_name: [
-    "campanha",
-    "nome da campanha",
-    "campaign name",
-    "campaign",
-    "conjunto de anuncios",
-    "nome do conjunto de anuncios",
-    "ad set name",
-    "ad set",
-    "nome do anuncio",
-    "ad name",
-  ],
-  platform: [
-    "plataforma",
-    "platform",
-    "veiculacao",
-    "veiculacao do conjunto de anuncios",
-    "placement",
-    "origem",
-  ],
-  investment: [
-    "investimento",
-    "valor usado",
-    "valor gasto",
-    "gasto",
-    "custo",
-    "amount spent",
-    "spend",
-    "cost",
-  ],
-  leads: ["leads", "resultados", "results", "conversoes", "conversions"],
-  revenue: [
-    "faturamento",
-    "receita",
-    "valor de conversao",
-    "valor de conversao das compras",
-    "purchase conversion value",
-    "purchases conversion value",
-    "revenue",
-  ],
-  impressions: ["impressoes", "impressions"],
-  reach: ["alcance", "reach", "pessoas alcancadas"],
-  views: [
-    "visualizacoes",
-    "visualizacoes de video",
-    "thruplays",
-    "reproducoes de video de 3 segundos",
-    "video views",
-    "3 second video views",
-    "3-second video views",
-  ],
-  clicks: ["cliques", "cliques no link", "clicks", "link clicks", "cliques todos", "all clicks"],
-} as const;
-
-const HEADER_CANDIDATE_ALIASES = [
-  ...FIELD_ALIASES.date,
-  ...FIELD_ALIASES.report_start,
-  ...FIELD_ALIASES.report_end,
-  ...FIELD_ALIASES.campaign_name,
-  ...FIELD_ALIASES.platform,
-  ...FIELD_ALIASES.investment,
-  ...FIELD_ALIASES.leads,
-  ...FIELD_ALIASES.revenue,
-  ...FIELD_ALIASES.impressions,
-  ...FIELD_ALIASES.reach,
-  ...FIELD_ALIASES.views,
-  ...FIELD_ALIASES.clicks,
-];
-
-const HEADER_DATE_ALIASES = [
-  ...FIELD_ALIASES.date,
-  ...FIELD_ALIASES.report_start,
-  ...FIELD_ALIASES.report_end,
-];
-
-const HEADER_METRIC_ALIASES = [
-  ...FIELD_ALIASES.campaign_name,
-  ...FIELD_ALIASES.platform,
-  ...FIELD_ALIASES.investment,
-  ...FIELD_ALIASES.leads,
-  ...FIELD_ALIASES.revenue,
-  ...FIELD_ALIASES.impressions,
-  ...FIELD_ALIASES.reach,
-  ...FIELD_ALIASES.views,
-  ...FIELD_ALIASES.clicks,
-];
-
-function countHeaderMatches(cells: string[], aliases: string[]) {
-  const normalizedAliases = new Set(aliases.map(normalizeKey));
-  return cells.filter((cell) => normalizedAliases.has(cell)).length;
-}
-
-function findHeaderRowIndex(rows: unknown[][]) {
-  for (let index = 0; index < rows.length; index += 1) {
-    const normalizedCells = rows[index]
-      .map((cell) => normalizeKey(String(cell ?? "")))
-      .filter(Boolean);
-
-    if (normalizedCells.length === 0) continue;
-
-    const totalMatches = countHeaderMatches(normalizedCells, HEADER_CANDIDATE_ALIASES);
-    const dateMatches = countHeaderMatches(normalizedCells, HEADER_DATE_ALIASES);
-    const metricMatches = countHeaderMatches(normalizedCells, HEADER_METRIC_ALIASES);
-
-    if (dateMatches >= 1 && metricMatches >= 1 && totalMatches >= 3) {
-      return index;
-    }
-  }
-
-  return rows.length > 0 ? 0 : -1;
-}
-
-function rowsToObjects(rows: unknown[][]): Record<string, unknown>[] {
-  const headerRowIndex = findHeaderRowIndex(rows);
-  if (headerRowIndex < 0) return [];
-
-  const headers = rows[headerRowIndex].map((cell, index) => {
-    const text = String(cell ?? "").trim();
-    return text || `coluna_${index + 1}`;
-  });
-
-  return rows
-    .slice(headerRowIndex + 1)
-    .filter((row) => row.some((cell) => String(cell ?? "").trim() !== ""))
-    .map((row) => {
-      const record: Record<string, unknown> = {};
-      headers.forEach((header, index) => {
-        record[header] = row[index] ?? "";
-      });
-      return record;
-    });
-}
-
-function parseDateToISO(value: unknown): string {
-  if (value === null || value === undefined || value === "") return "";
-
-  if (typeof value === "number" && Number.isFinite(value)) {
-    const excelEpoch = Date.UTC(1899, 11, 30);
-    const parsed = new Date(excelEpoch + Math.floor(value) * 86_400_000);
-    return Number.isNaN(parsed.getTime()) ? "" : parsed.toISOString().slice(0, 10);
-  }
-
-  if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    return value.toISOString().slice(0, 10);
-  }
-
-  const s = String(value).trim();
-  if (!s) return "";
-
-  const iso = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
-  if (iso) {
-    return `${iso[1]}-${iso[2].padStart(2, "0")}-${iso[3].padStart(2, "0")}`;
-  }
-
-  const br = s.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})/);
-  if (br) {
-    const [, d, m, yearRaw] = br;
-    let y = yearRaw;
-    if (y.length === 2) y = `20${y}`;
-    return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
-  }
-
-  const parsedDate = Date.parse(s);
-  if (!Number.isNaN(parsedDate)) {
-    return new Date(parsedDate).toISOString().slice(0, 10);
-  }
-
-  return "";
-}
-
-function extractDateFromRow(row: Record<string, unknown>) {
-  const directDate = parseDateToISO(pickField(row, [...FIELD_ALIASES.date]));
-  if (directDate) return directDate;
-
-  const reportStart = parseDateToISO(pickField(row, [...FIELD_ALIASES.report_start]));
-  const reportEnd = parseDateToISO(pickField(row, [...FIELD_ALIASES.report_end]));
-
-  if (reportStart && reportEnd && reportStart === reportEnd) {
-    return reportStart;
-  }
-
-  return "";
-}
-
-function analyzeDateColumns(rows: Record<string, unknown>[]) {
-  let directDailyDates = 0;
-  let singleDayRanges = 0;
-  let multiDayRanges = 0;
-  let sampleRange = "";
-
-  for (const row of rows) {
-    const directDate = parseDateToISO(pickField(row, [...FIELD_ALIASES.date]));
-    if (directDate) {
-      directDailyDates += 1;
-      continue;
-    }
-
-    const reportStart = parseDateToISO(pickField(row, [...FIELD_ALIASES.report_start]));
-    const reportEnd = parseDateToISO(pickField(row, [...FIELD_ALIASES.report_end]));
-
-    if (reportStart && reportEnd) {
-      if (reportStart === reportEnd) {
-        singleDayRanges += 1;
-      } else {
-        multiDayRanges += 1;
-        if (!sampleRange) {
-          sampleRange = `${reportStart} ate ${reportEnd}`;
-        }
-      }
-    }
-  }
-
-  return {
-    directDailyDates,
-    singleDayRanges,
-    multiDayRanges,
-    sampleRange,
-  };
-}
 
 function normalizeSpreadsheetCell(value: unknown): unknown {
   if (value === null || value === undefined) return "";
@@ -387,11 +117,14 @@ async function readSpreadsheet(file: File): Promise<Record<string, unknown>[]> {
     assertSafeXlsxArchive(buf);
     const workbook = new Workbook();
     await workbook.xlsx.load(buf);
-    const firstSheet = workbook.worksheets[0];
-    if (!firstSheet) throw new Error("O arquivo XLSX nao contem planilhas.");
+    const preferredSheet = workbook.worksheets.find((sheet) =>
+      PREFERRED_SHEET_NAMES.includes(normalizeKey(sheet.name ?? "")),
+    );
+    const sheet = preferredSheet ?? workbook.worksheets[0];
+    if (!sheet) throw new Error("O arquivo XLSX nao contem planilhas.");
 
     const rows: unknown[][] = [];
-    firstSheet.eachRow({ includeEmpty: false }, (worksheetRow, rowNumber) => {
+    sheet.eachRow({ includeEmpty: false }, (worksheetRow, rowNumber) => {
       if (rows.length >= MAX_IMPORT_ROWS + 1) {
         throw new Error(`O arquivo excede o limite de ${MAX_IMPORT_ROWS} linhas de dados.`);
       }
@@ -967,34 +700,12 @@ function ManageClientDialog({
 
     try {
       const rows = await readSpreadsheet(file);
-      const totalRows = rows.length;
       const dateAnalysis = analyzeDateColumns(rows);
+      const parsed = parseCampaignRows(rows);
 
-      const records = rows
-        .map((row) => {
-          const date = extractDateFromRow(row);
-          const platformVal = pickField(row, [...FIELD_ALIASES.platform]);
-          const campaignVal = pickField(row, [...FIELD_ALIASES.campaign_name]);
+      const ignored = parsed.ignoredAggregate + parsed.ignoredNoDate;
 
-          return {
-            client_id: client.id,
-            date,
-            platform: (platformVal ? String(platformVal).trim() : "") || "Meta Ads",
-            campaign_name: (campaignVal ? String(campaignVal).trim() : "") || "Sem nome",
-            investment: parseNumberBR(pickField(row, [...FIELD_ALIASES.investment])),
-            leads: Math.round(parseNumberBR(pickField(row, [...FIELD_ALIASES.leads]))),
-            revenue: parseNumberBR(pickField(row, [...FIELD_ALIASES.revenue])),
-            impressions: Math.round(parseNumberBR(pickField(row, [...FIELD_ALIASES.impressions]))),
-            reach: Math.round(parseNumberBR(pickField(row, [...FIELD_ALIASES.reach]))),
-            views: Math.round(parseNumberBR(pickField(row, [...FIELD_ALIASES.views]))),
-            clicks: Math.round(parseNumberBR(pickField(row, [...FIELD_ALIASES.clicks]))),
-          };
-        })
-        .filter((record) => record.date);
-
-      const ignored = totalRows - records.length;
-
-      if (records.length === 0) {
+      if (parsed.records.length === 0) {
         if (dateAnalysis.multiDayRanges > 0) {
           toast.error(
             `Esse arquivo veio consolidado por periodo (${dateAnalysis.sampleRange || "intervalo maior que um dia"}). Exporte do Meta com detalhamento por tempo em Dia para usar no dashboard diario.`,
@@ -1008,6 +719,35 @@ function ManageClientDialog({
         return;
       }
 
+      const syncRecords = parsed.records.map((record) => ({
+        date: record.date,
+        platform: record.platform,
+        campaign_name: record.campaign_name,
+        objective: record.objective,
+        result_value: record.result_value,
+        investment: record.investment,
+        leads: record.leads,
+        revenue: record.revenue,
+        impressions: record.impressions,
+        reach: record.reach,
+        views: record.views,
+        clicks: record.clicks,
+      }));
+
+      const campaignRecords = parsed.records.map((record) => ({
+        client_id: client.id,
+        date: record.date,
+        platform: record.platform,
+        campaign_name: record.campaign_name,
+        investment: record.investment,
+        leads: record.leads,
+        revenue: record.revenue,
+        impressions: record.impressions,
+        reach: record.reach,
+        views: record.views,
+        clicks: record.clicks,
+      }));
+
       const { data: sessionData } = await supabase.auth.getSession();
       const syncResponse = await fetch(
         "https://gvuggswkvsysaqtlsrdc.supabase.co/functions/v1/sync-canonical-metrics",
@@ -1017,7 +757,7 @@ function ManageClientDialog({
           "Content-Type": "application/json",
           Authorization: `Bearer ${sessionData.session?.access_token ?? ""}`,
         },
-        body: JSON.stringify({ clientName: client.company_name, records }),
+        body: JSON.stringify({ clientName: client.company_name, records: syncRecords }),
         },
       );
       if (!syncResponse.ok) {
@@ -1026,7 +766,7 @@ function ManageClientDialog({
         return;
       }
 
-      const { error } = await supabase.from("campaigns").insert(records);
+      const { error } = await supabase.from("campaigns").insert(campaignRecords);
       setImporting(false);
 
       if (error) {
@@ -1035,7 +775,7 @@ function ManageClientDialog({
       }
 
       toast.success(
-        `${records.length} linhas importadas${ignored > 0 ? ` (${ignored} ignoradas)` : ""}.`,
+        `${campaignRecords.length} linhas importadas${ignored > 0 ? ` (${ignored} ignoradas)` : ""}.`,
       );
     } catch (error: unknown) {
       setImporting(false);
