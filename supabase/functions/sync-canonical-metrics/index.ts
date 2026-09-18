@@ -121,11 +121,16 @@ Deno.serve(async (request) => {
   const canonical = createClient(canonicalUrl, canonicalServiceKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
-  const { data: client, error: clientError } = await canonical
+  // Resolve o cliente sem diferenciar maiusculas/minusculas para nao duplicar registros.
+  const { data: clientMatches, error: clientError } = await canonical
     .from("clients")
-    .select("id")
-    .eq("name", payload.clientName)
-    .maybeSingle();
+    .select("id, name")
+    .ilike("name", payload.clientName);
+  const client = clientMatches?.find(
+    (row) =>
+      String(row.name).trim().toLowerCase() ===
+      (payload.clientName as string).trim().toLowerCase(),
+  );
   if (clientError || !client) return response({ error: "Canonical client not found" }, 422, request);
 
   const metrics = payload.records.map((row) => ({
@@ -142,6 +147,8 @@ Deno.serve(async (request) => {
     source_record_id: `${row.date}:${row.platform}:${row.campaign_name}`,
     raw_data: {
       campaign_name: row.campaign_name,
+      objective: row.objective ?? null,
+      result_value: row.result_value ?? null,
       reach: Math.round(row.reach),
       views: Math.round(row.views),
     },
@@ -150,6 +157,18 @@ Deno.serve(async (request) => {
     .from("traffic_metrics")
     .upsert(metrics, { onConflict: "client_id,platform,period_start,period_end,source,source_record_id" });
   if (syncError) return response({ error: "Canonical sync failed" }, 502, request);
+
+  const { error: logError } = await canonical.from("activity_log").insert({
+    client_id: client.id,
+    user_id: userData.user.id,
+    action: "metrics_import",
+    details: {
+      source: "metrics_dashboard",
+      rows: metrics.length,
+      client_name: payload.clientName,
+    },
+  });
+  if (logError) console.error("activity_log insert failed", logError.message);
 
   return response({ synced: metrics.length }, 200, request);
 });
