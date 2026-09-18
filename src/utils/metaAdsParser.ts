@@ -202,7 +202,9 @@ function countMatches(cells: string[], aliases: string[]) {
 /** Procura dinamicamente a linha de cabecalho, ignorando linhas de apresentacao. */
 export function findHeaderRowIndex(rows: unknown[][]): number {
   for (let index = 0; index < rows.length; index += 1) {
-    const cells = (rows[index] ?? []).map((cell) => normalizeKey(String(cell ?? ""))).filter(Boolean);
+    const cells = (rows[index] ?? [])
+      .map((cell) => normalizeKey(String(cell ?? "")))
+      .filter(Boolean);
     if (cells.length === 0) continue;
 
     const total = countMatches(cells, HEADER_CANDIDATE_ALIASES);
@@ -353,8 +355,16 @@ export function parseCampaignRows(rows: Record<string, unknown>[]): ParseResult 
       return;
     }
 
-    const investment = requireNumber(pickField(row, FIELD_ALIASES.investment), "investimento", rowNumber);
-    const impressions = requireNumber(pickField(row, FIELD_ALIASES.impressions), "impressoes", rowNumber);
+    const investment = requireNumber(
+      pickField(row, FIELD_ALIASES.investment),
+      "investimento",
+      rowNumber,
+    );
+    const impressions = requireNumber(
+      pickField(row, FIELD_ALIASES.impressions),
+      "impressoes",
+      rowNumber,
+    );
 
     const objectiveRaw = pickField(row, FIELD_ALIASES.objective);
     const objective = isBlank(objectiveRaw) ? "" : String(objectiveRaw).trim();

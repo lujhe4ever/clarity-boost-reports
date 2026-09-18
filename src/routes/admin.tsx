@@ -88,7 +88,6 @@ async function saveClientLogo(clientId: string, file: File | null, remove = fals
   return (payload.logo_url as string | null) ?? null;
 }
 
-
 function normalizeSpreadsheetCell(value: unknown): unknown {
   if (value === null || value === undefined) return "";
   if (value instanceof Date || typeof value === "number" || typeof value === "string") {
@@ -752,17 +751,19 @@ function ManageClientDialog({
       const syncResponse = await fetch(
         "https://gvuggswkvsysaqtlsrdc.supabase.co/functions/v1/sync-canonical-metrics",
         {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${sessionData.session?.access_token ?? ""}`,
-        },
-        body: JSON.stringify({ clientName: client.company_name, records: syncRecords }),
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${sessionData.session?.access_token ?? ""}`,
+          },
+          body: JSON.stringify({ clientName: client.company_name, records: syncRecords }),
         },
       );
       if (!syncResponse.ok) {
         setImporting(false);
-        toast.error("Os dados não foram gravados na base oficial. Nenhuma importação foi concluída.");
+        toast.error(
+          "Os dados não foram gravados na base oficial. Nenhuma importação foi concluída.",
+        );
         return;
       }
 
