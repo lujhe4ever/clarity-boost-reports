@@ -47,6 +47,10 @@ function isImportedMetric(value: unknown): value is ImportedMetric {
     row.platform.length <= 100 &&
     typeof row.campaign_name === "string" &&
     row.campaign_name.length <= 500 &&
+    (row.objective === undefined ||
+      (typeof row.objective === "string" && row.objective.length <= 200)) &&
+    (row.result_value === undefined ||
+      (typeof row.result_value === "number" && Number.isFinite(row.result_value))) &&
     ["investment", "leads", "revenue", "impressions", "clicks", "reach", "views"].every(
       (key) => typeof row[key] === "number" && Number.isFinite(row[key]) && row[key] >= 0,
     )
