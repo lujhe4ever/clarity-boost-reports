@@ -8,6 +8,8 @@ type ImportedMetric = {
   date: string;
   platform: string;
   campaign_name: string;
+  objective?: string;
+  result_value?: number;
   investment: number;
   leads: number;
   revenue: number;
