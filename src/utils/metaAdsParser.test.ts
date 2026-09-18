@@ -8,7 +8,15 @@ import {
   rowsToObjects,
 } from "@/utils/metaAdsParser";
 
-const HEADER = ["Dia", "Nome da campanha", "Objetivo", "Valor usado (BRL)", "Impressões", "Alcance", "Resultados"];
+const HEADER = [
+  "Dia",
+  "Nome da campanha",
+  "Objetivo",
+  "Valor usado (BRL)",
+  "Impressões",
+  "Alcance",
+  "Resultados",
+];
 
 describe("meta ads parser", () => {
   it("detecta cabecalho deslocado apos linhas de apresentacao", () => {
@@ -44,7 +52,10 @@ describe("meta ads parser", () => {
   });
 
   it("rejeita investimento ou impressoes invalidos com mensagem clara", () => {
-    const rows = [HEADER, ["2026-09-01", "Campanha A", "Cadastros", "indisponível", "10", "8", "1"]];
+    const rows = [
+      HEADER,
+      ["2026-09-01", "Campanha A", "Cadastros", "indisponível", "10", "8", "1"],
+    ];
     expect(() => parseCampaignRows(rowsToObjects(rows))).toThrow(/investimento na linha 2/);
 
     const rows2 = [HEADER, ["2026-09-01", "Campanha A", "Cadastros", "10", "n/d", "8", "1"]];
@@ -78,6 +89,11 @@ describe("meta ads parser", () => {
   });
 
   it("falha quando o cabecalho e invalido", () => {
-    expect(() => rowsToObjects([["a", "b"], ["1", "2"]])).toThrow(/cabecalho/);
+    expect(() =>
+      rowsToObjects([
+        ["a", "b"],
+        ["1", "2"],
+      ]),
+    ).toThrow(/cabecalho/);
   });
 });
